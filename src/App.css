@@ -1,0 +1,11 @@
+/**
+ * App layout – phone-sized container per G2.md reference apps.
+ */
+.app-container {
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+  min-height: 100vh;
+  box-sizing: border-box;
+}

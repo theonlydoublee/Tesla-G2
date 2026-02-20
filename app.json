@@ -1,0 +1,18 @@
+{
+  "package_id": "com.evenrealities.tesla",
+  "edition": "202601",
+  "name": "Tesla",
+  "version": "0.1.0",
+  "min_app_version": "0.1.0",
+  "tagline": "Tesla vehicle status and controls for Even G2 glasses",
+  "description": "Tesla vehicle status and controls for Even G2 glasses",
+  "author": "Even Realities",
+  "entrypoint": "index.html",
+  "permissions": {
+    "network": [
+      "fleet-api.prd.na.vn.cloud.tesla.com",
+      "auth.tesla.com",
+      "*.tesla.com"
+    ]
+  }
+}
