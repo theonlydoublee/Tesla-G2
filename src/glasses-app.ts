@@ -149,7 +149,7 @@ function buildCredentialsMessagePage() {
     containerID: STATUS_TEXT_ID,
     containerName: STATUS_TEXT_NAME,
     content:
-      'Open your phone to enter Tesla API tokens.\n\nUse the form on the phone to add your access token and refresh token, then tap Save.',
+      'Open your phone to sign in with Tesla.\n\nUse the app on your phone to sign in with your Tesla account.',
     isEventCapture: 1,
   });
   // Draw order: first in config = back. Put image first so it renders behind text.

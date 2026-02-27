@@ -11,8 +11,10 @@
   "permissions": {
     "network": [
       "fleet-api.prd.na.vn.cloud.tesla.com",
+      "fleet-auth.prd.vn.cloud.tesla.com",
       "auth.tesla.com",
-      "*.tesla.com"
+      "*.tesla.com",
+      "even.thedevcave.xyz"
     ]
   }
 }
