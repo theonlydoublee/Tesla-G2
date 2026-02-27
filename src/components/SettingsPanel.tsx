@@ -2,7 +2,7 @@
  * Tesla API credentials panel using @jappyjan/even-realities-ui.
  */
 
-import { useState, FormEvent } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import {
   Card,
   CardHeader,
@@ -27,7 +27,7 @@ export function SettingsPanel({ bridge, onSaved }: SettingsPanelProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success');
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const accessVal = accessToken.trim();
     const refreshVal = refreshToken.trim();
@@ -60,7 +60,13 @@ export function SettingsPanel({ bridge, onSaved }: SettingsPanelProps) {
             onChange={(e) => setAccessToken(e.target.value)}
             placeholder="Paste your Tesla access token"
             autoComplete="off"
-            style={{ width: '100%', marginBottom: 8 }}
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              display: 'block',
+              marginBottom: 8,
+            }}
           />
           <Text variant="detail" style={{ display: 'block', marginBottom: 20 }}>
             Required for Tesla Fleet API requests.
@@ -75,7 +81,13 @@ export function SettingsPanel({ bridge, onSaved }: SettingsPanelProps) {
             onChange={(e) => setRefreshToken(e.target.value)}
             placeholder="Paste your Tesla refresh token"
             autoComplete="off"
-            style={{ width: '100%', marginBottom: 8 }}
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              display: 'block',
+              marginBottom: 8,
+            }}
           />
           <Text variant="detail" style={{ display: 'block', marginBottom: 20 }}>
             Used to obtain a new access token when it expires.

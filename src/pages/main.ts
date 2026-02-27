@@ -1,7 +1,7 @@
 /** Static page data for main menu. Edit variables below for testing. */
 
 // --- Editable static variables ---
-const carName = 'MyTesla';
+const carName = 'MyTeslaMyTeslaMyTesla';
 const batteryPercent = 80;
 const batteryMileage = 217;
 const drivingState = 'Parked';
@@ -24,38 +24,42 @@ export function setTokenDisplay(accessToken: string | undefined, refreshToken: s
     : refreshToken ? '••••' : '';
 }
 
-function buildLeftContent(): string {
+/** API-ready shape for canvas renderer. Replace static values with Tesla API later. */
+export interface MainPageData {
+  carName: string;
+  batteryPercent: number;
+  batteryMileage: number;
+  drivingState: string;
+  isCharging: boolean;
+  chargingInfo: {
+    label: string;
+    timeLeft: string;
+    speedMph: number;
+    powerKw: number;
+  } | null;
+  tokenDisplay: { access: string; refresh: string };
+}
+
+function buildTextContent(): string {
   const lines = [
-    carName,
-    '',
-    `Battery  ${batteryPercent}%  ${batteryMileage} mi`,
-    '',
+    `${carName} - ${batteryPercent}% - ${batteryMileage} mi`,
     drivingState,
   ];
   if (isCharging) {
     lines.push(chargingLabel);
     lines.push(chargingTimeLeft);
-    lines.push('');
     lines.push(`${chargingSpeedMph} mi/hr    ${chargingPowerKw} kW`);
-  }
-  if (tokenDisplayAccess || tokenDisplayRefresh) {
-    lines.push('');
-    lines.push('API tokens  saved');
-    if (tokenDisplayAccess) lines.push(`Access   ${tokenDisplayAccess}`);
-    if (tokenDisplayRefresh) lines.push(`Refresh  ${tokenDisplayRefresh}`);
   }
   return lines.join('\n');
 }
 
 export interface PageData {
-  leftContent: string;
+  textContent: string;
   listItems: string[];
 }
 
 export const mainPageData: PageData = {
-  get leftContent() {
-    return buildLeftContent();
-  },
+  textContent: buildTextContent(),
   listItems: [
     'CONTROLS  >',
     'CLIMATE   Interior 115 F  >',

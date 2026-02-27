@@ -8,135 +8,134 @@ import {
   CreateStartUpPageContainer,
   RebuildPageContainer,
   TextContainerProperty,
-  ListContainerProperty,
-  ListItemContainerProperty,
   ImageContainerProperty,
   ImageRawDataUpdate,
-  OsEventTypeList,
   StartUpPageCreateResult,
 } from '@evenrealities/even_hub_sdk';
 
-import { loadAndPrepareBackgroundImage } from './utils/image-for-glasses';
-import { mainPageData, setTokenDisplay } from './pages/main';
-import { controlsPageData } from './pages/controls';
-import { climatePageData } from './pages/climate';
-import { chargingPageData } from './pages/charging';
+import { setupGlassesEventHandler } from './utils/events';
+import {
+  loadAndPrepareImage,
+} from './utils/image-for-glasses';
+import { mainPageData } from './pages/main';
 
 export type PageType = 'main' | 'controls' | 'climate' | 'charging';
-
-// G2 canvas (per G2.md)
-const CANVAS_WIDTH = 576;
-const CANVAS_HEIGHT = 288;
 
 // Layout: left status block, right menu list (guidelines: 16px margin, 8px vertical)
 const MARGIN = 16;
 const MARGIN_V = 8;
-const LEFT_WIDTH = 256;
-const LIST_WIDTH = CANVAS_WIDTH - MARGIN * 2 - LEFT_WIDTH - 8;
-const LIST_X = MARGIN + LEFT_WIDTH + 8;
-const CONTENT_HEIGHT = CANVAS_HEIGHT - MARGIN_V * 2;
 
 // Container IDs/names (stable across pages)
-const BG_IMAGE_ID = 0;
-const BG_IMAGE_NAME = 'bg';
 const STATUS_TEXT_ID = 1;
 const STATUS_TEXT_NAME = 'status';
-const MENU_LIST_ID = 2;
-const MENU_LIST_NAME = 'menu';
 
-// Background image container size (G2 max 200×100)
-const BG_IMAGE_WIDTH = 200;
-const BG_IMAGE_HEIGHT = 100;
 
 /** Page types: main menu or themed sub-pages */
 export const PAGE_MAIN: PageType = 'main';
-const PAGE_CONTROLS: PageType = 'controls';
-const PAGE_CLIMATE: PageType = 'climate';
-const PAGE_CHARGING: PageType = 'charging';
 
-const PAGE_TYPES: PageType[] = [PAGE_CONTROLS, PAGE_CLIMATE, PAGE_CHARGING];
+// G2 canvas dimensions
+const CANVAS_WIDTH = 576;
+const CANVAS_HEIGHT = 288;
 
-/** Themed content per page: left panel text + right list items (max 64 chars each) */
-const PAGE_CONTENT: Record<PageType, { leftContent: string; listItems: string[] }> = {
-  [PAGE_MAIN]: mainPageData,
-  [PAGE_CONTROLS]: controlsPageData,
-  [PAGE_CLIMATE]: climatePageData,
-  [PAGE_CHARGING]: chargingPageData,
-};
+/** Per-image config: path, position, and size. Edit in code. */
+export interface ControlImageConfig {
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const CONTROL_IMAGES: ControlImageConfig[] = [
+  { url: '/icons/200x100-green.png', x: 88, y: 188, width: 200, height: 100 },
+  { url: '/icons/200x100-green.png', x: 288, y: 188, width: 200, height: 100 },
+  { url: '/icons/200x100-green.png', x: 0, y: 0, width: 80, height: 80 },
+];
+
+// Container IDs for main page: text=1, images=2,3,4
+const MAIN_TEXT_ID = 1;
+const MAIN_TEXT_NAME = 'main-text';
 
 /**
- * Build a page config (left text + right list) for a given page type.
+ * Build container-based main page: text top-right, 3 images at bottom.
  */
-function buildPageConfig(pageType: PageType) {
-  const { leftContent, listItems } = PAGE_CONTENT[pageType];
+function buildContainerMainPageConfig() {
+  const imageObjects = CONTROL_IMAGES.map((cfg, i) =>
+    new ImageContainerProperty({
+      xPosition: cfg.x,
+      yPosition: cfg.y,
+      width: cfg.width,
+      height: cfg.height,
+      containerID: 2 + i,
+      containerName: `ctrl-img-${i}`,
+    })
+  );
 
-  const statusText = new TextContainerProperty({
-    xPosition: MARGIN,
-    yPosition: MARGIN_V,
-    width: LEFT_WIDTH,
-    height: CONTENT_HEIGHT,
-    borderWidth: 1,
+  const textContainer = new TextContainerProperty({
+    xPosition: 293,
+    yPosition: 8,
+    width: 275,
+    height: 182,
+    borderWidth: 0,
     borderColor: 5,
     borderRdaius: 6,
     paddingLength: 12,
-    containerID: STATUS_TEXT_ID,
-    containerName: STATUS_TEXT_NAME,
-    content: leftContent,
-    isEventCapture: 0,
-  });
-
-  const menuList = new ListContainerProperty({
-    xPosition: LIST_X,
-    yPosition: MARGIN_V,
-    width: LIST_WIDTH,
-    height: CONTENT_HEIGHT,
-    borderWidth: 1,
-    borderColor: 13,
-    borderRdaius: 6,
-    paddingLength: 10,
-    containerID: MENU_LIST_ID,
-    containerName: MENU_LIST_NAME,
+    containerID: MAIN_TEXT_ID,
+    containerName: MAIN_TEXT_NAME,
+    content: mainPageData.textContent,
     isEventCapture: 1,
-    itemContainer: new ListItemContainerProperty({
-      itemCount: listItems.length,
-      itemWidth: LIST_WIDTH - 20,
-      isItemSelectBorderEn: 1,
-      itemName: listItems,
-    }),
   });
 
-  const bgImage = new ImageContainerProperty({
-    xPosition: 0,
-    yPosition: 0,
-    width: BG_IMAGE_WIDTH,
-    height: BG_IMAGE_HEIGHT,
-    containerID: BG_IMAGE_ID,
-    containerName: BG_IMAGE_NAME,
-  });
-
-  // Draw order: first in config = back. Put image first so it renders behind text/list.
   return {
-    containerTotalNum: 3,
-    imageObject: [bgImage],
-    listObject: [menuList],
-    textObject: [statusText],
+    containerTotalNum: 4,
+    imageObject: imageObjects,
+    textObject: [textContainer],
   };
 }
 
-function buildStartupPage() {
-  return new CreateStartUpPageContainer(buildPageConfig(PAGE_MAIN));
+export function buildContainerRebuildPage() {
+  return new RebuildPageContainer(buildContainerMainPageConfig());
+}
+
+/**
+ * Load and send CONTROL_IMAGES to glasses. G2: queue sequentially.
+ */
+export async function sendControlImages(bridge: EvenAppBridge): Promise<void> {
+  for (let i = 0; i < CONTROL_IMAGES.length; i++) {
+    const cfg = CONTROL_IMAGES[i];
+    if (!cfg) continue;
+    const pngBytes = await loadAndPrepareImage(cfg.url, cfg.width, cfg.height);
+    if (pngBytes) {
+      await bridge.updateImageRawData(
+        new ImageRawDataUpdate({
+          containerID: 2 + i,
+          containerName: `ctrl-img-${i}`,
+          imageData: pngBytes,
+        })
+      );
+    }
+  }
+}
+
+/**
+ * Switch from credentials page to container main page. Call after tokens saved.
+ */
+export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
+  await bridge.rebuildPageContainer(buildContainerRebuildPage());
+  await sendControlImages(bridge);
+  setupGlassesEventHandler(bridge);
 }
 
 /** Single full-screen text container for "credentials needed" so glasses start up. */
 function buildCredentialsMessagePage() {
-  const bgImage = new ImageContainerProperty({
-    xPosition: 0,
-    yPosition: 0,
-    width: BG_IMAGE_WIDTH,
-    height: BG_IMAGE_HEIGHT,
-    containerID: BG_IMAGE_ID,
-    containerName: BG_IMAGE_NAME,
-  });
+  // const bgImage = new ImageContainerProperty({
+  //   xPosition: 0,
+  //   yPosition: 0,
+  //   width: BG_IMAGE_WIDTH,
+  //   height: BG_IMAGE_HEIGHT,
+  //   containerID: BG_IMAGE_ID,
+  //   containerName: BG_IMAGE_NAME,
+  // });
 
   const text = new TextContainerProperty({
     xPosition: MARGIN,
@@ -155,99 +154,20 @@ function buildCredentialsMessagePage() {
   });
   // Draw order: first in config = back. Put image first so it renders behind text.
   return new CreateStartUpPageContainer({
-    containerTotalNum: 2,
-    imageObject: [bgImage],
-    listObject: [],
+    containerTotalNum: 1,
     textObject: [text],
   });
 }
 
-export function buildRebuildPage(pageType: PageType) {
-  return new RebuildPageContainer(buildPageConfig(pageType));
-}
 
-function isClickEvent(eventType: number | undefined): boolean {
-  return (
-    eventType === OsEventTypeList.CLICK_EVENT ||
-    eventType === undefined
-  );
-}
 
-function isDoubleClickEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.DOUBLE_CLICK_EVENT;
-}
 
 /**
- * Load the background image and send it to the glasses. Call after create or rebuild.
- * G2: queue image updates sequentially – await before next update.
- */
-export async function sendBackgroundImage(bridge: EvenAppBridge): Promise<void> {
-  const pngBytes = await loadAndPrepareBackgroundImage(BG_IMAGE_WIDTH, BG_IMAGE_HEIGHT);
-  if (!pngBytes) return;
-
-  await bridge.updateImageRawData(
-    new ImageRawDataUpdate({
-      containerID: BG_IMAGE_ID,
-      containerName: BG_IMAGE_NAME,
-      imageData: pngBytes,
-    })
-  );
-}
-
-/**
- * Register the full glasses event handler (main menu navigation). Use after
- * the main menu page is shown (createStartUpPageContainer or rebuildPageContainer).
- */
-export function setupGlassesEventHandler(bridge: EvenAppBridge): void {
-  let currentPage: PageType = PAGE_MAIN;
-
-  async function navigateTo(pageType: PageType): Promise<void> {
-    currentPage = pageType;
-    await bridge.rebuildPageContainer(buildRebuildPage(pageType));
-    await sendBackgroundImage(bridge);
-  }
-
-  bridge.onEvenHubEvent((event) => {
-    const listEvent = event.listEvent;
-    const textEvent = event.textEvent;
-    const sysEvent = event.sysEvent;
-
-    const eventType =
-      listEvent?.eventType ?? textEvent?.eventType ?? sysEvent?.eventType;
-
-    if (isDoubleClickEvent(eventType)) {
-      bridge.shutDownPageContainer(1);
-      return;
-    }
-
-    if (!isClickEvent(eventType) || !listEvent) return;
-
-    const index = listEvent.currentSelectItemIndex ?? 0;
-    const items = PAGE_CONTENT[currentPage].listItems;
-    const name = listEvent.currentSelectItemName ?? items[index] ?? '';
-
-    if (currentPage === PAGE_MAIN) {
-      const pageType = PAGE_TYPES[index];
-      if (pageType !== undefined) {
-        void navigateTo(pageType);
-      }
-      return;
-    }
-
-    if (index === 0 || index === undefined) {
-      void navigateTo(PAGE_MAIN);
-      return;
-    }
-
-    console.log('[Tesla] Sub-page action:', { page: currentPage, index, name });
-  });
-}
-
-/**
- * Start the glasses app (main menu and event handling). Call when tokens exist.
+ * Start the glasses app (container main page and event handling). Call when tokens exist.
  */
 export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
-  const result = await bridge.createStartUpPageContainer(buildStartupPage());
+  const config = new CreateStartUpPageContainer(buildContainerMainPageConfig());
+  const result = await bridge.createStartUpPageContainer(config);
 
   const resultCode =
     typeof result === 'number' ? result : (result as { index?: number })?.index ?? result;
@@ -256,7 +176,7 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
     return;
   }
 
-  await sendBackgroundImage(bridge);
+  await sendControlImages(bridge);
   setupGlassesEventHandler(bridge);
 }
 
@@ -276,17 +196,5 @@ export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Pro
     return;
   }
 
-  await sendBackgroundImage(bridge);
-  bridge.onEvenHubEvent((event) => {
-    const listEvent = event.listEvent;
-    const textEvent = event.textEvent;
-    const sysEvent = event.sysEvent;
-    const eventType =
-      listEvent?.eventType ?? textEvent?.eventType ?? sysEvent?.eventType;
-    if (isDoubleClickEvent(eventType)) {
-      bridge.shutDownPageContainer(1);
-    }
-  });
+  setupGlassesEventHandler(bridge);
 }
-
-export { setTokenDisplay };

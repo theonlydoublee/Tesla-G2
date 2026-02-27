@@ -8,12 +8,9 @@ import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import {
   startGlassesApp,
   startGlassesCredentialsMessage,
-  setupGlassesEventHandler,
-  buildRebuildPage,
-  sendBackgroundImage,
-  setTokenDisplay,
-  PAGE_MAIN,
+  switchToMainPage,
 } from './glasses-app';
+import { setTokenDisplay } from './pages/main';
 import { SettingsPanel } from './components/SettingsPanel';
 import './App.css';
 
@@ -24,8 +21,10 @@ export function App() {
   const [bridge, setBridge] = useState<EvenAppBridge | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
+    setInitError(null);
     waitForEvenAppBridge()
       .then(async (b) => {
         setBridge(b);
@@ -44,6 +43,8 @@ export function App() {
       })
       .catch((err) => {
         console.error('[Tesla] init error:', err);
+        setInitError(err?.message ?? 'Failed to connect to Even Hub');
+        setInitialized(true);
       });
   }, []);
 
@@ -51,18 +52,47 @@ export function App() {
     if (!bridge) return;
     setTokenDisplay(accessToken, refreshToken);
     setShowSettings(false);
-    await bridge.rebuildPageContainer(buildRebuildPage(PAGE_MAIN));
-    await sendBackgroundImage(bridge);
-    setupGlassesEventHandler(bridge);
+    await switchToMainPage(bridge);
   }
 
-  if (!initialized || !bridge) {
-    return null;
+  // Loading: waiting for bridge
+  if (!bridge && !initError) {
+    return (
+      <div className="app-container">
+        <p>Connecting to Even Hub…</p>
+      </div>
+    );
   }
 
-  if (!showSettings) {
-    return null;
+  // Init failed (e.g. not running inside Even Hub)
+  if (initError) {
+    return (
+      <div className="app-container">
+        <p>{initError}</p>
+        <p style={{ marginTop: 8, fontSize: 14, opacity: 0.8 }}>
+          Open this app from Even Hub to use Tesla on your glasses.
+        </p>
+      </div>
+    );
   }
+
+  if (!initialized) {
+    return (
+      <div className="app-container">
+        <p>Starting up…</p>
+      </div>
+    );
+  }
+
+  // if (!showSettings) {
+  //   return (
+  //     <div className="app-container">
+  //       <GlassesPreview />
+  //     </div>
+  //   );
+  // }
+
+  if (!bridge) return null;
 
   return (
     <div className="app-container">
