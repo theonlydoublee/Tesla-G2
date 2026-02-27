@@ -1,9 +1,0 @@
-services:
-  tesla-auth:
-    build:
-      context: ..
-      dockerfile: Docker/Dockerfile
-    ports:
-      - "3000:3000"
-    env_file: .env
-    restart: unless-stopped

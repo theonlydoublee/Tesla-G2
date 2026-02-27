@@ -1,10 +1,17 @@
 /**
  * Tesla OAuth token exchange API.
  * Exchanges authorization code for access and refresh tokens.
+ * Run from Docker/: npm start  (after npm run build from project root)
  */
 
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DIST_PATH = join(__dirname, '..', 'dist');
 
 const app = express();
 const TESLA_TOKEN_URL = 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token';
@@ -16,8 +23,8 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://even.thedevcave.xy
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json());
 
-// Serve static files (Vite build) - must be before API route for proper precedence
-app.use(express.static('dist'));
+// Serve static files (Vite build) - dist/ is in project root
+app.use(express.static(DIST_PATH));
 
 // Public config (client_id is not secret)
 app.get('/api/tesla/config', (req, res) => {
@@ -79,7 +86,7 @@ app.post('/api/tesla/exchange-token', async (req, res) => {
 // SPA fallback: serve index.html for non-API routes
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api/')) {
-    res.sendFile('dist/index.html', { root: process.cwd() });
+    res.sendFile(join(DIST_PATH, 'index.html'));
   } else {
     res.status(404).json({ error: 'Not found' });
   }

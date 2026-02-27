@@ -1,11 +1,10 @@
-# Tesla Auth API (Docker)
+# Tesla Auth API
 
-Token exchange backend for Tesla OAuth on `even.thedevcave.xyz`.
+Token exchange backend for Tesla OAuth on `even.thedevcave.xyz`. Runs directly on the Linux machine (no Docker).
 
 ## Prerequisites
 
-- Docker
-- Docker Compose
+- Node.js 18+ (or 20+)
 - Tesla Developer Portal app (Client ID, Client Secret)
 - Domain `even.thedevcave.xyz` pointing to this machine
 
@@ -19,6 +18,7 @@ Token exchange backend for Tesla OAuth on `even.thedevcave.xyz`.
 ## Environment
 
 ```bash
+cd Docker
 cp .env.example .env
 # Edit .env with your values:
 # TESLA_CLIENT_ID=xxx
@@ -29,22 +29,49 @@ cp .env.example .env
 
 ## Build and run
 
-From the `Docker` directory (context is project root; Dockerfile builds the app in-stage):
+### 1. Build the Vite app (from project root)
+
+```bash
+npm run build
+```
+
+### 2. Install API dependencies and run (from project root)
 
 ```bash
 cd Docker
-docker compose build
-docker compose up -d
+npm install
+npm start
 ```
 
-The API listens on port 3000 and serves the static app and `/api/tesla/exchange-token`.
+Or from project root in one go:
+
+```bash
+npm run build && cd Docker && npm install && npm start
+```
+
+The API listens on port 3000 and serves the static app plus `/api/tesla/exchange-token` and `/api/tesla/config`.
+
+### Run in background (e.g. with pm2)
+
+```bash
+cd Docker
+npm install
+pm2 start server.js --name tesla-auth
+pm2 save
+pm2 startup
+```
+
+Or with `nohup`:
+
+```bash
+cd Docker
+npm install
+nohup node server.js > tesla-auth.log 2>&1 &
+```
 
 ## Reverse proxy (HTTPS)
 
-Configure Nginx or Caddy so that `https://even.thedevcave.xyz`:
-
-- Proxies all traffic to `http://localhost:3000`, OR
-- Proxies `/api/*` to `http://localhost:3000` and serves static files from `dist/`
+Configure Nginx or Caddy so that `https://even.thedevcave.xyz` proxies to `http://localhost:3000`.
 
 Example Caddy (auto HTTPS):
 
