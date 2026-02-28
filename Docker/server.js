@@ -91,6 +91,50 @@ app.post('/api/tesla/exchange-token', async (req, res) => {
   }
 });
 
+app.post('/api/tesla/refresh-token', async (req, res) => {
+  const { refresh_token } = req.body;
+  const clientId = process.env.TESLA_CLIENT_ID;
+
+  if (!refresh_token || !clientId) {
+    return res.status(400).json({
+      error: 'Missing required fields',
+      required: ['refresh_token'],
+      hint: !clientId ? 'Configure TESLA_CLIENT_ID' : undefined,
+    });
+  }
+
+  try {
+    const response = await fetch(TESLA_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        refresh_token,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      const status = response.status === 401 ? 401 : response.status;
+      return res.status(status).json({
+        error: data.error || 'Token refresh failed',
+        error_description: data.error_description,
+      });
+    }
+
+    return res.json({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_in: data.expires_in,
+    });
+  } catch (err) {
+    console.error('Token refresh error:', err);
+    return res.status(500).json({ error: 'Token refresh failed' });
+  }
+});
+
 const FLEET_API_BASE = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
 
 // Proxy Fleet API requests (avoids CORS - Tesla blocks browser direct calls)

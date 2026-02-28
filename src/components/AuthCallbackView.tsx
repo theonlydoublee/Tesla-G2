@@ -10,6 +10,7 @@ import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
+const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';
 
 export function AuthCallbackView() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -46,6 +47,7 @@ export function AuthCallbackView() {
           const bridge = await waitForEvenAppBridge();
           await bridge.setLocalStorage(STORAGE_KEY_ACCESS_TOKEN, data.access_token);
           await bridge.setLocalStorage(STORAGE_KEY_REFRESH_TOKEN, data.refresh_token);
+          await bridge.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, new Date().toISOString());
           setStatus('success');
           window.location.replace('/');
         } else {

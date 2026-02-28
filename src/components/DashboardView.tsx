@@ -14,11 +14,23 @@ const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
+const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';
+const TOKEN_STALE_DAYS = 80;
+const STALE_MS = TOKEN_STALE_DAYS * 24 * 60 * 60 * 1000;
+
+function isTokenStale(refreshedAt: string | null | undefined): boolean {
+  if (!refreshedAt) return false;
+  return Date.now() - new Date(refreshedAt).getTime() > STALE_MS;
+}
 
 export interface DashboardViewProps {
   bridge: EvenAppBridge;
   accessToken: string;
   refreshToken: string;
+  tokenRefreshedAt?: string | null;
+  needsReauth?: boolean;
+  onTokensRefreshed?: (access: string, refresh: string) => void | Promise<void>;
+  onRefreshFailed?: () => void;
   onReAuthorize?: () => void;
 }
 
@@ -32,18 +44,46 @@ function generateState(): string {
 export function DashboardView({
   bridge,
   accessToken,
-  onReAuthorize,
+  refreshToken,
+  tokenRefreshedAt,
+  needsReauth,
+  onTokensRefreshed,
+  onRefreshFailed,
 }: DashboardViewProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState<string>('');
   const [reAuthError, setReAuthError] = useState<string | null>(null);
 
   async function handleTestApi() {
+    if (needsReauth) return;
     setTestStatus('loading');
     setTestMessage('');
+    let tokenToUse = accessToken;
+    if (isTokenStale(tokenRefreshedAt)) {
+      try {
+        const res = await fetch('/api/tesla/refresh-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        const data = await res.json();
+        if (res.ok && data.access_token && data.refresh_token) {
+          tokenToUse = data.access_token;
+          await onTokensRefreshed?.(data.access_token, data.refresh_token);
+        } else {
+          onRefreshFailed?.();
+          setTestStatus('idle');
+          return;
+        }
+      } catch {
+        onRefreshFailed?.();
+        setTestStatus('idle');
+        return;
+      }
+    }
     try {
       const res = await fetch('/api/tesla/vehicles', {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${tokenToUse}` },
       });
       const data = await res.json();
       if (res.ok) {
@@ -65,6 +105,7 @@ export function DashboardView({
     try {
       await bridge.setLocalStorage(STORAGE_KEY_ACCESS_TOKEN, '');
       await bridge.setLocalStorage(STORAGE_KEY_REFRESH_TOKEN, '');
+      await bridge.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, '');
     } catch {
       // ignore
     }
@@ -97,10 +138,14 @@ export function DashboardView({
           type="button"
           variant="primary"
           onClick={handleTestApi}
-          disabled={testStatus === 'loading'}
+          disabled={testStatus === 'loading' || needsReauth}
           style={{ width: '100%', marginBottom: 12 }}
         >
-          {testStatus === 'loading' ? 'Testing…' : 'Test API Access'}
+          {needsReauth
+            ? 'Please Reauthorize'
+            : testStatus === 'loading'
+              ? 'Testing…'
+              : 'Test API Access'}
         </Button>
 
         {testStatus === 'success' && (
