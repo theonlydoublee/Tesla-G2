@@ -271,19 +271,29 @@ export function DashboardView({
         <Text variant="title-1">Tesla API</Text>
       </CardHeader>
       <CardContent>
-        <Button
-          type="button"
-          variant="primary"
-          onClick={handleTestApi}
-          disabled={testStatus === 'loading' || needsReauth}
-          style={{ width: '100%', marginBottom: 12 }}
-        >
-          {needsReauth
-            ? 'Please Reauthorize'
-            : testStatus === 'loading'
-              ? 'Testing…'
-              : 'Test API Access'}
-        </Button>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleTestApi}
+            disabled={testStatus === 'loading' || needsReauth}
+            style={{ flex: 1 }}
+          >
+            {needsReauth
+              ? 'Please Reauthorize'
+              : testStatus === 'loading'
+                ? 'Testing…'
+                : 'Test API Access'}
+          </Button>
+          <Button
+            type="button"
+            variant="accent"
+            onClick={startReAuth}
+            style={{ flex: 1 }}
+          >
+            Re-authorize
+          </Button>
+        </div>
 
         {testStatus === 'success' && (
           <Text
@@ -326,15 +336,6 @@ export function DashboardView({
             {reAuthError}
           </Text>
         )}
-
-        <Button
-          type="button"
-          variant="accent"
-          onClick={startReAuth}
-          style={{ width: '100%', marginBottom: 12 }}
-        >
-          Re-authorize
-        </Button>
 
         <Text
           variant="title-1"
