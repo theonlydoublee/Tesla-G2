@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
+import { switchToMainPage } from '../glasses-app';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 const REDIRECT_URI = `${API_BASE}/auth/callback`;
@@ -182,6 +183,17 @@ export function DashboardView({
               model: decodeModelFromVin(v.vin),
             }));
           setVehicles(list);
+          await switchToMainPage(bridge);
+          const firstVehicle = list[0];
+          if (firstVehicle && !stored) {
+            const selected: SelectedVehicle = {
+              vin: firstVehicle.vin,
+              name: firstVehicle.display_name,
+              model: firstVehicle.model ?? decodeModelFromVin(firstVehicle.vin),
+            };
+            await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(selected));
+            setSelectedVehicle(selected);
+          }
         } else {
           setVehiclesError(data?.error ?? data?.error_description ?? `HTTP ${res.status}`);
           setVehicles([]);
@@ -226,6 +238,7 @@ export function DashboardView({
         const count = data?.response?.length ?? 0;
         setTestStatus('success');
         setTestMessage(`Success: ${count} vehicle(s) found`);
+        await switchToMainPage(bridge);
         await fetchVehicles();
       } else {
         setTestStatus('error');
