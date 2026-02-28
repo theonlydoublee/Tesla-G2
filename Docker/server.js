@@ -83,6 +83,26 @@ app.post('/api/tesla/exchange-token', async (req, res) => {
   }
 });
 
+const FLEET_API_BASE = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
+
+// Proxy Fleet API requests (avoids CORS - Tesla blocks browser direct calls)
+app.get('/api/tesla/vehicles', async (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+  try {
+    const response = await fetch(`${FLEET_API_BASE}/api/1/vehicles`, {
+      headers: { Authorization: auth },
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('Tesla vehicles proxy error:', err);
+    res.status(500).json({ error: 'Failed to fetch vehicles' });
+  }
+});
+
 // SPA fallback: serve index.html for non-API routes
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api/')) {

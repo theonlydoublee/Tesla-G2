@@ -7,10 +7,10 @@ import { useState } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 
-const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
+const API_BASE = 'https://even.thedevcave.xyz';
+const REDIRECT_URI = `${API_BASE}/auth/callback`;
 const SCOPES = 'openid offline_access vehicle_device_data';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
-const FLEET_API = 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/vehicles';
 
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
@@ -42,7 +42,7 @@ export function DashboardView({
     setTestStatus('loading');
     setTestMessage('');
     try {
-      const res = await fetch(FLEET_API, {
+      const res = await fetch(`${API_BASE}/api/tesla/vehicles`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await res.json();
@@ -68,7 +68,7 @@ export function DashboardView({
     } catch {
       // ignore
     }
-    const r = await fetch('https://even.thedevcave.xyz/api/tesla/config');
+    const r = await fetch(`${API_BASE}/api/tesla/config`);
     const d = await r.json();
     const cid = d?.clientId;
     if (!cid) {
