@@ -277,7 +277,7 @@ export function DashboardView({
             variant="primary"
             onClick={handleTestApi}
             disabled={testStatus === 'loading' || needsReauth}
-            style={{ flex: 1 }}
+            style={{ flex: 1 , width: '40%'}}
           >
             {needsReauth
               ? 'Please Reauthorize'
@@ -289,7 +289,7 @@ export function DashboardView({
             type="button"
             variant="accent"
             onClick={startReAuth}
-            style={{ flex: 1 }}
+            style={{ flex: 1 , width: '40%'}}
           >
             Re-authorize
           </Button>
