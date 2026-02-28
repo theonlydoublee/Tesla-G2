@@ -337,10 +337,11 @@ export function DashboardView({
         </Button>
 
         <Text
-          variant="body-2"
+          variant="title-1"
           style={{
             marginBottom: 8,
             display: 'block',
+            textAlign: 'center',
           }}
         >
           {selectedVehicle
