@@ -1,9 +1,9 @@
 /**
  * Dashboard view when Tesla tokens exist.
- * Test API access and re-authorize options.
+ * Test API access, vehicle selection, and re-authorize options.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 
@@ -15,12 +15,38 @@ const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
 const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';
+const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
 const TOKEN_STALE_DAYS = 80;
 const STALE_MS = TOKEN_STALE_DAYS * 24 * 60 * 60 * 1000;
+
+interface TeslaVehicle {
+  vin: string;
+  display_name: string;
+  model?: string;
+}
+
+interface SelectedVehicle {
+  vin: string;
+  name: string;
+  model: string;
+}
 
 function isTokenStale(refreshedAt: string | null | undefined): boolean {
   if (!refreshedAt) return false;
   return Date.now() - new Date(refreshedAt).getTime() > STALE_MS;
+}
+
+function decodeModelFromVin(vin: string): string {
+  if (!vin || vin.length < 4) return 'Tesla';
+  const c = vin[3];
+  if (!c) return 'Tesla';
+  switch (c.toUpperCase()) {
+    case 'S': return 'Model S';
+    case 'X': return 'Model X';
+    case '3': return 'Model 3';
+    case 'Y': return 'Model Y';
+    default: return 'Tesla';
+  }
 }
 
 export interface DashboardViewProps {
@@ -53,11 +79,13 @@ export function DashboardView({
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState<string>('');
   const [reAuthError, setReAuthError] = useState<string | null>(null);
+  const [vehicles, setVehicles] = useState<TeslaVehicle[] | null>(null);
+  const [vehiclesLoading, setVehiclesLoading] = useState(false);
+  const [vehiclesError, setVehiclesError] = useState<string | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<SelectedVehicle | null>(null);
 
-  async function handleTestApi() {
-    if (needsReauth) return;
-    setTestStatus('loading');
-    setTestMessage('');
+  async function getValidToken(): Promise<string | null> {
+    if (needsReauth) return null;
     let tokenToUse = accessToken;
     if (isTokenStale(tokenRefreshedAt)) {
       try {
@@ -72,14 +100,122 @@ export function DashboardView({
           await onTokensRefreshed?.(data.access_token, data.refresh_token);
         } else {
           onRefreshFailed?.();
-          setTestStatus('idle');
-          return;
+          return null;
         }
       } catch {
         onRefreshFailed?.();
-        setTestStatus('idle');
-        return;
+        return null;
       }
+    }
+    return tokenToUse;
+  }
+
+  async function fetchVehicles() {
+    const tokenToUse = await getValidToken();
+    if (!tokenToUse) return;
+    setVehiclesLoading(true);
+    setVehiclesError(null);
+    try {
+      const res = await fetch('/api/tesla/vehicles', {
+        headers: { Authorization: `Bearer ${tokenToUse}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const raw = (data?.response ?? []) as Array<{ vin?: string; display_name?: string }>;
+        const list: TeslaVehicle[] = raw
+          .filter((v): v is { vin: string; display_name?: string } => !!v?.vin)
+          .map((v) => ({
+            vin: v.vin,
+            display_name: v.display_name ?? 'Unnamed',
+            model: decodeModelFromVin(v.vin),
+          }));
+        setVehicles(list);
+      } else {
+        setVehiclesError(data?.error ?? data?.error_description ?? `HTTP ${res.status}`);
+        setVehicles([]);
+      }
+    } catch (err) {
+      setVehiclesError(err instanceof Error ? err.message : 'Request failed');
+      setVehicles([]);
+    } finally {
+      setVehiclesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!accessToken || needsReauth) return;
+    let cancelled = false;
+    (async () => {
+      const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
+      if (cancelled) return;
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as SelectedVehicle;
+          if (parsed?.vin && parsed?.name) {
+            setSelectedVehicle({
+              vin: parsed.vin,
+              name: parsed.name,
+              model: parsed.model ?? decodeModelFromVin(parsed.vin),
+            });
+          }
+        } catch {
+          // ignore invalid stored data
+        }
+      }
+      const tokenToUse = await getValidToken();
+      if (cancelled || !tokenToUse) return;
+      setVehiclesLoading(true);
+      setVehiclesError(null);
+      try {
+        const res = await fetch('/api/tesla/vehicles', {
+          headers: { Authorization: `Bearer ${tokenToUse}` },
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok) {
+          const raw = (data?.response ?? []) as Array<{ vin?: string; display_name?: string }>;
+          const list: TeslaVehicle[] = raw
+            .filter((v): v is { vin: string; display_name?: string } => !!v?.vin)
+            .map((v) => ({
+              vin: v.vin,
+              display_name: v.display_name ?? 'Unnamed',
+              model: decodeModelFromVin(v.vin),
+            }));
+          setVehicles(list);
+        } else {
+          setVehiclesError(data?.error ?? data?.error_description ?? `HTTP ${res.status}`);
+          setVehicles([]);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setVehiclesError(err instanceof Error ? err.message : 'Request failed');
+          setVehicles([]);
+        }
+      } finally {
+        if (!cancelled) setVehiclesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [accessToken, needsReauth, bridge]);
+
+  async function handleSelectVehicle(vehicle: TeslaVehicle) {
+    const selected: SelectedVehicle = {
+      vin: vehicle.vin,
+      name: vehicle.display_name,
+      model: vehicle.model ?? decodeModelFromVin(vehicle.vin),
+    };
+    await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(selected));
+    setSelectedVehicle(selected);
+  }
+
+  async function handleTestApi() {
+    if (needsReauth) return;
+    setTestStatus('loading');
+    setTestMessage('');
+    const tokenToUse = await getValidToken();
+    if (!tokenToUse) {
+      setTestStatus('idle');
+      return;
     }
     try {
       const res = await fetch('/api/tesla/vehicles', {
@@ -90,6 +226,7 @@ export function DashboardView({
         const count = data?.response?.length ?? 0;
         setTestStatus('success');
         setTestMessage(`Success: ${count} vehicle(s) found`);
+        await fetchVehicles();
       } else {
         setTestStatus('error');
         setTestMessage(data?.error ?? data?.error_description ?? `HTTP ${res.status}`);
@@ -194,10 +331,68 @@ export function DashboardView({
           type="button"
           variant="accent"
           onClick={startReAuth}
-          style={{ width: '100%' }}
+          style={{ width: '100%', marginBottom: 12 }}
         >
           Re-authorize
         </Button>
+
+        <Text
+          variant="body-2"
+          style={{
+            marginBottom: 8,
+            display: 'block',
+          }}
+        >
+          {selectedVehicle
+            ? `Selected: ${selectedVehicle.name} - ${selectedVehicle.model}`
+            : 'No car selected'}
+        </Text>
+
+        {vehiclesLoading && (
+          <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.8 }}>
+            Loading vehicles…
+          </Text>
+        )}
+        {vehiclesError && (
+          <Text
+            variant="body-2"
+            style={{
+              marginBottom: 8,
+              color: 'var(--color-tc-red)',
+            }}
+          >
+            {vehiclesError}
+          </Text>
+        )}
+        {vehicles && vehicles.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {vehicles.map((v) => (
+              <div
+                key={v.vin}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 8,
+                  borderRadius: 8,
+                  backgroundColor: 'var(--color-bc-1st)',
+                }}
+              >
+                <Text variant="body-2">
+                  {v.display_name} - {v.model ?? decodeModelFromVin(v.vin)}
+                </Text>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => handleSelectVehicle(v)}
+                  style={{ flexShrink: 0, marginLeft: 8 }}
+                >
+                  Select
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
