@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 
-const API_BASE = 'https://even.thedevcave.xyz';
+const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
 const SCOPES = 'openid offline_access vehicle_device_data';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
@@ -28,7 +28,7 @@ export function SignInView({ bridge }: SignInViewProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/tesla/config`)
+    fetch('/api/tesla/config')
       .then((r) => r.json())
       .then((data) => setClientId(data.clientId ?? null))
       .catch(() => setError('Could not load sign-in config'));
