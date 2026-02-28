@@ -23,6 +23,14 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://even.thedevcave.xy
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json());
 
+// Prevent caching of HTML and assets so new builds are always used
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') || req.path.startsWith('/assets/')) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  }
+  next();
+});
+
 // Serve static files (Vite build) - dist/ is in project root
 app.use(express.static(DIST_PATH));
 
