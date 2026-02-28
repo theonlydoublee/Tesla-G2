@@ -271,28 +271,32 @@ export function DashboardView({
         <Text variant="title-1">Tesla API</Text>
       </CardHeader>
       <CardContent>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={handleTestApi}
-            disabled={testStatus === 'loading' || needsReauth}
-            style={{ flex: 1 , width: '40%'}}
-          >
-            {needsReauth
-              ? 'Please Reauthorize'
-              : testStatus === 'loading'
-                ? 'Testing…'
-                : 'Test API Access'}
-          </Button>
-          <Button
-            type="button"
-            variant="accent"
-            onClick={startReAuth}
-            style={{ flex: 1 , width: '40%'}}
-          >
-            Re-authorize
-          </Button>
+        <div style={{ display: 'flex', flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleTestApi}
+              disabled={testStatus === 'loading' || needsReauth}
+              style={{ width: '100%' }}
+            >
+              {needsReauth
+                ? 'Please Reauthorize'
+                : testStatus === 'loading'
+                  ? 'Testing…'
+                  : 'Test API Access'}
+            </Button>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Button
+              type="button"
+              variant="accent"
+              onClick={startReAuth}
+              style={{ width: '100%' }}
+            >
+              Re-authorize
+            </Button>
+          </div>
         </div>
 
         {testStatus === 'success' && (
