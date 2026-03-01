@@ -69,7 +69,7 @@ export async function renderControlsCanvas(
   // Draw selector BEHIND icons (first, so icons render on top)
   if (selectorBitmap && selectedIndex >= 0 && selectedIndex < iconCenters.length) {
     const selCenterX = iconCenters[selectedIndex] ?? 0;
-    const selSize = Math.min(iconSizePx + 16, 48);
+    const selSize = Math.min(iconSizePx + 8, 48);
     const selX = selCenterX - selSize / 2;
     const selY = centerY - selSize / 2;
     ctx.drawImage(selectorBitmap, selX, selY, selSize, selSize);
