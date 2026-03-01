@@ -200,19 +200,25 @@ export function buildContainerRebuildPage(textContent: string) {
 }
 
 /**
- * Update the control label text container when selection changes.
+ * Set the control label text container to arbitrary content.
  */
-async function updateControlLabel(bridge: EvenAppBridge): Promise<void> {
-  const label = getControlLabel(controlsSelectedIndex);
+async function setControlLabelContent(bridge: EvenAppBridge, content: string): Promise<void> {
   await bridge.textContainerUpgrade(
     new TextContainerUpgrade({
       containerID: CONTROL_LABEL_ID,
       containerName: CONTROL_LABEL_NAME,
       contentOffset: 0,
       contentLength: 50,
-      content: label,
+      content,
     })
   );
+}
+
+/**
+ * Update the control label text container when selection changes.
+ */
+async function updateControlLabel(bridge: EvenAppBridge): Promise<void> {
+  await setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
 }
 
 /**
@@ -286,20 +292,31 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   let command = action.command;
   let body = action.body;
 
+  await setControlLabelContent(bridge, 'Sending');
+
   if (index === CHARGE_ACTION_INDEX) {
-    const vRes = await fetch(`/api/tesla/vehicle_data/${vin}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const vData = await vRes.json();
-    const chargeState = vData?.response?.charge_state ?? vData?.charge_state;
-    const charging = chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
-    command = charging ? 'charge_stop' : 'charge_start';
-    body = undefined;
+    try {
+      const vRes = await fetch(`/api/tesla/vehicle_data/${vin}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const vData = await vRes.json();
+      const chargeState = vData?.response?.charge_state ?? vData?.charge_state;
+      const charging = chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
+      command = charging ? 'charge_stop' : 'charge_start';
+      body = undefined;
+    } catch (err) {
+      console.warn('[Tesla] Charge state fetch failed:', err);
+      await setControlLabelContent(bridge, 'Failed');
+      setTimeout(() => {
+        void setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
+      }, 3000);
+      return;
+    }
   }
 
   try {
     const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
-    await fetch(`/api/tesla/command/${vehicleId}/${command}`, {
+    const res = await fetch(`/api/tesla/command/${vehicleId}/${command}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -307,8 +324,20 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
       },
       body: reqBody ? JSON.stringify(reqBody) : undefined,
     });
+    if (res.ok) {
+      await setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
+    } else {
+      await setControlLabelContent(bridge, 'Failed');
+      setTimeout(() => {
+        void setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
+      }, 3000);
+    }
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
+    await setControlLabelContent(bridge, 'Failed');
+    setTimeout(() => {
+      void setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
+    }, 3000);
   }
 }
 
