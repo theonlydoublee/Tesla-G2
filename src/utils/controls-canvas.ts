@@ -13,8 +13,8 @@ import {
 const CANVAS_WIDTH = 400;
 const CANVAS_HEIGHT = 100;
 const HALF_WIDTH = 200;
-const ICON_GAP = 12;
-const LABEL_FONT = '12px sans-serif';
+const ICON_GAP = 9;
+const LABEL_FONT = '16px verdana';
 const LABEL_Y = 92;
 
 /** Load image from URL and return ImageBitmap. */

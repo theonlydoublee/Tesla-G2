@@ -298,7 +298,7 @@ export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
       } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
         controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
+      } else if (et === OsEventTypeList.CLICK_EVENT) {
         void executeControlCommand(bridge, controlsSelectedIndex);
       }
     },
@@ -366,7 +366,7 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
       } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
         controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
+      } else if (et === OsEventTypeList.CLICK_EVENT) {
         void executeControlCommand(bridge, controlsSelectedIndex);
       }
     },
