@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
-import { switchToMainPage } from '../glasses-app';
+import { switchToMainPage, sendControlImages } from '../glasses-app';
 import { STORAGE_KEY_ICON_SIZE, type IconSizeKey } from '../controls-config';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
@@ -245,7 +245,7 @@ export function DashboardView({
   async function handleIconSizeChange(value: IconSizeKey) {
     setIconSize(value);
     await bridge.setLocalStorage(STORAGE_KEY_ICON_SIZE, value);
-    await switchToMainPage(bridge);
+    await sendControlImages(bridge);
   }
 
   async function handleRefreshAndSendToGlasses() {
