@@ -89,6 +89,7 @@ export function DashboardView({
   const [selectedVehicle, setSelectedVehicle] = useState<SelectedVehicle | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [iconSize, setIconSize] = useState<IconSizeKey>('medium');
+  const [virtualKeyAdded, setVirtualKeyAdded] = useState<boolean | null>(null);
 
   async function getValidToken(): Promise<string | null> {
     if (needsReauth) return null;
@@ -231,6 +232,32 @@ export function DashboardView({
     return () => { cancelled = true; };
   }, [accessToken, needsReauth, bridge]);
 
+  useEffect(() => {
+    if (!selectedVehicle || needsReauth) {
+      setVirtualKeyAdded(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setVirtualKeyAdded(null);
+      const tokenToUse = await getValidToken();
+      if (cancelled || !tokenToUse) return;
+      try {
+        const params = new URLSearchParams();
+        if (selectedVehicle.id != null) params.set('vehicleId', String(selectedVehicle.id));
+        if (selectedVehicle.vin) params.set('vin', selectedVehicle.vin);
+        const res = await fetch(`/api/tesla/check-virtual-key?${params}`, {
+          headers: { Authorization: `Bearer ${tokenToUse}` },
+        });
+        const data = await res.json();
+        if (!cancelled) setVirtualKeyAdded(data.virtualKeyAdded === true);
+      } catch {
+        if (!cancelled) setVirtualKeyAdded(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedVehicle?.id, selectedVehicle?.vin, needsReauth]);
+
   async function handleSelectVehicle(vehicle: TeslaVehicle) {
     const selected: SelectedVehicle = {
       id: vehicle.id,
@@ -353,18 +380,23 @@ export function DashboardView({
           </div>
         </div>
 
-        <Text
-          variant="subtitle"
-          style={{ marginBottom: 12, display: 'block' }}
-        >
-          To add a virtual key, open{' '}
-          <a
-            style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
+        {virtualKeyAdded !== true && (
+          <Text
+            variant="subtitle"
+            style={{ marginBottom: 12, display: 'block' }}
           >
-            https://www.tesla.com/_ak/even.thedevcave.xyz
-          </a>{' '}
-          in a web browser on your phone or a computer.
-        </Text>
+            To add a virtual key, which is required, open{' '}
+            <a
+              href="https://www.tesla.com/_ak/even.thedevcave.xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
+            >
+              https://www.tesla.com/_ak/even.thedevcave.xyz
+            </a>{' '}
+            in a web browser on your phone with the Tesla app installed.
+          </Text>
+        )}
 
         {testStatus === 'success' && (
           <Text

@@ -180,6 +180,45 @@ app.get('/api/tesla/vehicle_data/:vin', async (req, res) => {
   }
 });
 
+const TESLA_COMMAND_PROXY_URL = process.env.TESLA_COMMAND_PROXY_URL?.replace(/\/$/, '');
+
+// Check if virtual key is paired (for hiding the "add virtual key" note).
+// Sends a harmless door_lock; 200 = key works, 403 = key not added.
+app.get('/api/tesla/check-virtual-key', async (req, res) => {
+  const auth = req.headers.authorization;
+  const { vehicleId, vin } = req.query;
+  if (!auth) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+  const vid = vehicleId || vin;
+  if (!vid) {
+    return res.status(400).json({ error: 'Missing vehicleId or vin' });
+  }
+  try {
+    const fetchOpts = {
+      method: 'POST',
+      headers: {
+        Authorization: auth,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    };
+    let targetUrl;
+    if (TESLA_COMMAND_PROXY_URL && vin) {
+      targetUrl = `${TESLA_COMMAND_PROXY_URL}/api/1/vehicles/${vin}/command/door_lock`;
+      fetchOpts.dispatcher = insecureDispatcher;
+    } else {
+      targetUrl = `${FLEET_API_BASE}/api/1/vehicles/${vid}/command/door_lock`;
+    }
+    const response = await fetch(targetUrl, fetchOpts);
+    const virtualKeyAdded = response.status === 200;
+    res.json({ virtualKeyAdded });
+  } catch (err) {
+    console.error('Tesla check-virtual-key error:', err);
+    res.json({ virtualKeyAdded: false });
+  }
+});
+
 // Tesla Fleet API command proxy - vehicle commands (lock, unlock, frunk, etc.)
 // Tesla requires commands to be signed via Vehicle Command Proxy for most vehicles.
 // Set TESLA_COMMAND_PROXY_URL to route commands through tesla-http-proxy instead of Fleet API directly.
@@ -194,8 +233,6 @@ const ALLOWED_COMMANDS = new Set([
   'flash_lights',
   'honk_horn',
 ]);
-
-const TESLA_COMMAND_PROXY_URL = process.env.TESLA_COMMAND_PROXY_URL?.replace(/\/$/, '');
 
 app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
   const auth = req.headers.authorization;
