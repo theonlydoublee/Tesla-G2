@@ -61,6 +61,19 @@ const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
 
+function decodeModelFromVin(vin: string): string {
+  if (!vin || vin.length < 4) return 'Tesla';
+  const c = vin[3];
+  if (!c) return 'Tesla';
+  switch (c.toUpperCase()) {
+    case 'S': return 'Model S';
+    case 'X': return 'Model X';
+    case '3': return 'Model 3';
+    case 'Y': return 'Model Y';
+    default: return 'Tesla';
+  }
+}
+
 /**
  * Fetch live vehicle data and return text content for main page.
  * Falls back to placeholder if no token, no vehicle, or API error.
@@ -70,11 +83,13 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
   if (!accessToken) return FALLBACK_TEXT;
 
   let vin: string | null = null;
+  let storedDisplayName: string | null = null;
   const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
   if (stored) {
     try {
-      const parsed = JSON.parse(stored) as { vin?: string };
+      const parsed = JSON.parse(stored) as { vin?: string; name?: string };
       if (parsed?.vin) vin = parsed.vin;
+      if (parsed?.name) storedDisplayName = parsed.name;
     } catch {
       // ignore invalid stored data
     }
@@ -87,10 +102,15 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
       });
       const data = await res.json();
       const list = (data?.response ?? []) as Array<{ vin?: string }>;
-      const first = list.find((v) => v?.vin);
+      const first = list.find((v) => v?.vin) as { vin: string; display_name?: string } | undefined;
       if (first?.vin) {
         vin = first.vin;
-        await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(first));
+        storedDisplayName = first.display_name ?? null;
+        await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify({
+          vin: first.vin,
+          name: first.display_name ?? 'Unnamed',
+          model: decodeModelFromVin(first.vin),
+        }));
       }
     } catch {
       return FALLBACK_TEXT;
@@ -106,7 +126,7 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
     const data = await res.json();
     if (!res.ok) return FALLBACK_TEXT;
     const vehicleData = data?.response ?? data;
-    return buildTextContentFromVehicleData(vehicleData);
+    return buildTextContentFromVehicleData(vehicleData, storedDisplayName);
   } catch {
     return FALLBACK_TEXT;
   }

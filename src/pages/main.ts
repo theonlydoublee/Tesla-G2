@@ -72,12 +72,16 @@ function formatChargingTime(minutes: number | null | undefined, hours: number | 
 
 /**
  * Build main page text content from Tesla vehicle_data API response.
+ * Use preferredDisplayName (e.g. from locally stored selected vehicle) for the car name when provided.
  * Returns fallback text if data is missing or invalid.
  */
-export function buildTextContentFromVehicleData(vehicleData: TeslaVehicleDataResponse | null | undefined): string {
+export function buildTextContentFromVehicleData(
+  vehicleData: TeslaVehicleDataResponse | null | undefined,
+  preferredDisplayName?: string | null,
+): string {
   if (!vehicleData) return FALLBACK_TEXT;
 
-  const displayName = vehicleData.display_name ?? 'Tesla';
+  const displayName = preferredDisplayName ?? vehicleData.display_name ?? 'Tesla';
   const chargeState = vehicleData.charge_state;
   const driveState = vehicleData.drive_state;
   const batteryLevel = chargeState?.battery_level ?? chargeState?.usable_battery_level ?? 0;

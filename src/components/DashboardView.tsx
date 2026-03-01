@@ -84,6 +84,7 @@ export function DashboardView({
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
   const [vehiclesError, setVehiclesError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<SelectedVehicle | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   async function getValidToken(): Promise<string | null> {
     if (needsReauth) return null;
@@ -218,6 +219,19 @@ export function DashboardView({
     };
     await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(selected));
     setSelectedVehicle(selected);
+  }
+
+  async function handleRefreshAndSendToGlasses() {
+    if (needsReauth) return;
+    setSaveStatus('loading');
+    try {
+      await switchToMainPage(bridge);
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    }
   }
 
   async function handleTestApi() {
@@ -410,6 +424,21 @@ export function DashboardView({
                 </Button>
               </div>
             ))}
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleRefreshAndSendToGlasses}
+              disabled={saveStatus === 'loading' || needsReauth}
+              style={{ marginTop: 8 }}
+            >
+              {saveStatus === 'loading'
+                ? 'Refreshing…'
+                : saveStatus === 'success'
+                  ? 'Sent to glasses'
+                  : saveStatus === 'error'
+                    ? 'Failed'
+                    : 'Save & Send to Glasses'}
+            </Button>
           </div>
         )}
       </CardContent>
