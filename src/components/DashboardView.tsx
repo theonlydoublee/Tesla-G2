@@ -338,7 +338,7 @@ export function DashboardView({
                 ? 'Please Reauthorize'
                 : testStatus === 'loading'
                   ? 'Testing…'
-                  : 'Test API Access'}
+                  : 'Test API'}
             </Button>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -352,14 +352,16 @@ export function DashboardView({
             </Button>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <Button
-              type="button"
-              variant="default"
-              onClick={() => window.open('https://www.tesla.com/_ak/even.thedevcave.xyz', '_blank', 'noopener,noreferrer')}
-              style={{ width: '100%' }}
+            <a
+              href="https://www.tesla.com/_ak/even.thedevcave.xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'block', width: '100%', textDecoration: 'none' }}
             >
-              Add Virtual Key
-            </Button>
+              <Button type="button" variant="accent" style={{ width: '100%' }}>
+                Add Virtual Key
+              </Button>
+            </a>
           </div>
         </div>
 
