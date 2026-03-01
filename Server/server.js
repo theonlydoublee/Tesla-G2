@@ -155,6 +155,27 @@ app.get('/api/tesla/vehicles', async (req, res) => {
   }
 });
 
+app.get('/api/tesla/vehicle_data/:vin', async (req, res) => {
+  const auth = req.headers.authorization;
+  const { vin } = req.params;
+  if (!auth) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+  if (!vin) {
+    return res.status(400).json({ error: 'Missing VIN' });
+  }
+  try {
+    const response = await fetch(`${FLEET_API_BASE}/api/1/vehicles/${vin}/vehicle_data`, {
+      headers: { Authorization: auth },
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('Tesla vehicle_data proxy error:', err);
+    res.status(500).json({ error: 'Failed to fetch vehicle data' });
+  }
+});
+
 // SPA fallback: serve index.html for non-API routes
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api/')) {

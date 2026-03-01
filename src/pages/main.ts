@@ -1,30 +1,6 @@
-/** Static page data for main menu. Edit variables below for testing. */
+/** Main page data from Tesla API. Live data, no static variables. */
 
-// --- Editable static variables ---
-const carName = 'MyTeslaMyTeslaMyTesla';
-const batteryPercent = 80;
-const batteryMileage = 217;
-const drivingState = 'Parked';
-const isCharging = false;
-const chargingLabel = 'Supercharging';
-const chargingTimeLeft = '30 min remaining';
-const chargingSpeedMph = 488;
-const chargingPowerKw = 118;
-
-/** Token display on main page (set when keys are saved). Masked: last 4 chars shown. */
-let tokenDisplayAccess = '';
-let tokenDisplayRefresh = '';
-
-export function setTokenDisplay(accessToken: string | undefined, refreshToken: string | undefined): void {
-  tokenDisplayAccess = typeof accessToken === 'string' && accessToken.length >= 4
-    ? '••••' + accessToken.slice(-4)
-    : accessToken ? '••••' : '';
-  tokenDisplayRefresh = typeof refreshToken === 'string' && refreshToken.length >= 4
-    ? '••••' + refreshToken.slice(-4)
-    : refreshToken ? '••••' : '';
-}
-
-/** API-ready shape for canvas renderer. Replace static values with Tesla API later. */
+/** API-ready shape for canvas renderer. */
 export interface MainPageData {
   carName: string;
   batteryPercent: number;
@@ -40,29 +16,101 @@ export interface MainPageData {
   tokenDisplay: { access: string; refresh: string };
 }
 
-function buildTextContent(): string {
-  const lines = [
-    `${carName} - ${batteryPercent}% - ${batteryMileage} mi`,
-    drivingState,
-  ];
-  if (isCharging) {
-    lines.push(chargingLabel);
-    lines.push(chargingTimeLeft);
-    lines.push(`${chargingSpeedMph} mi/hr    ${chargingPowerKw} kW`);
-  }
-  return lines.join('\n');
-}
-
 export interface PageData {
   textContent: string;
   listItems: string[];
 }
 
-export const mainPageData: PageData = {
-  textContent: buildTextContent(),
-  listItems: [
-    'CONTROLS  >',
-    'CLIMATE   Interior 115 F  >',
-    'CHARGING  >',
-  ],
-};
+/** Tesla vehicle_data API response shape (subset we use). */
+export interface TeslaVehicleDataResponse {
+  display_name?: string | null;
+  charge_state?: {
+    battery_level?: number | null;
+    usable_battery_level?: number | null;
+    battery_range?: number | null;
+    est_battery_range?: number | null;
+    ideal_battery_range?: number | null;
+    charging_state?: string | null;
+    charge_rate?: number | null;
+    charger_power?: number | null;
+    minutes_to_full_charge?: number | null;
+    time_to_full_charge?: number | null;
+    fast_charger_present?: boolean | null;
+  } | null;
+  drive_state?: {
+    shift_state?: string | null;
+  } | null;
+}
+
+const FALLBACK_TEXT = 'Vehicle data unavailable';
+
+function formatDriveState(shiftState: string | null | undefined): string {
+  if (shiftState == null || shiftState === '') return 'Parked';
+  switch (shiftState) {
+    case 'D': return 'Drive';
+    case 'R': return 'Reverse';
+    case 'N': return 'Neutral';
+    case 'P': return 'Parked';
+    default: return shiftState;
+  }
+}
+
+function formatChargingTime(minutes: number | null | undefined, hours: number | null | undefined): string {
+  if (minutes != null && minutes > 0) {
+    if (minutes >= 60) {
+      const h = Math.floor(minutes / 60);
+      const m = Math.round(minutes % 60);
+      return m > 0 ? `${h}h ${m}m remaining` : `${h}h remaining`;
+    }
+    return `${Math.round(minutes)} min remaining`;
+  }
+  if (hours != null && hours > 0) {
+    return `${hours.toFixed(1)}h remaining`;
+  }
+  return '';
+}
+
+/**
+ * Build main page text content from Tesla vehicle_data API response.
+ * Returns fallback text if data is missing or invalid.
+ */
+export function buildTextContentFromVehicleData(vehicleData: TeslaVehicleDataResponse | null | undefined): string {
+  if (!vehicleData) return FALLBACK_TEXT;
+
+  const displayName = vehicleData.display_name ?? 'Tesla';
+  const chargeState = vehicleData.charge_state;
+  const driveState = vehicleData.drive_state;
+  const batteryLevel = chargeState?.battery_level ?? chargeState?.usable_battery_level ?? 0;
+  const batteryRange =
+    chargeState?.battery_range ?? chargeState?.est_battery_range ?? chargeState?.ideal_battery_range ?? 0;
+  const mileage = Math.round(batteryRange);
+  const shiftState = driveState?.shift_state ?? null;
+  const drivingStateStr = formatDriveState(shiftState);
+  const chargingState = chargeState?.charging_state ?? '';
+  const isCharging = chargingState === 'Charging' || chargingState === 'Starting';
+
+  const lines = [
+    `${displayName} - ${batteryLevel}% - ${mileage} mi`,
+    drivingStateStr,
+  ];
+
+  if (isCharging && chargeState) {
+    const label = chargeState.fast_charger_present ? 'Supercharging' : 'Charging';
+    lines.push(label);
+    const timeLeft = formatChargingTime(
+      chargeState.minutes_to_full_charge,
+      chargeState.time_to_full_charge,
+    );
+    if (timeLeft) lines.push(timeLeft);
+    const rate = chargeState.charge_rate ?? 0;
+    const power = chargeState.charger_power ?? 0;
+    lines.push(`${rate} mi/hr    ${power} kW`);
+  }
+
+  return lines.join('\n');
+}
+
+/** Stub for App token display. Kept for compatibility. */
+export function setTokenDisplay(_access: string, _refresh: string): void {
+  // No-op: tokens are used for API calls, not displayed on main page.
+}

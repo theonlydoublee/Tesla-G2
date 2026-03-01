@@ -17,7 +17,7 @@ import { setupGlassesEventHandler } from './utils/events';
 import {
   loadAndPrepareImage,
 } from './utils/image-for-glasses';
-import { mainPageData } from './pages/main';
+import { buildTextContentFromVehicleData } from './pages/main';
 
 export type PageType = 'main' | 'controls' | 'climate' | 'charging';
 
@@ -56,10 +56,66 @@ export const CONTROL_IMAGES: ControlImageConfig[] = [
 const MAIN_TEXT_ID = 1;
 const MAIN_TEXT_NAME = 'main-text';
 
+const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
+const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
+
+const FALLBACK_TEXT = 'Vehicle data unavailable';
+
+/**
+ * Fetch live vehicle data and return text content for main page.
+ * Falls back to placeholder if no token, no vehicle, or API error.
+ */
+async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> {
+  const accessToken = await bridge.getLocalStorage(STORAGE_KEY_ACCESS_TOKEN);
+  if (!accessToken) return FALLBACK_TEXT;
+
+  let vin: string | null = null;
+  const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as { vin?: string };
+      if (parsed?.vin) vin = parsed.vin;
+    } catch {
+      // ignore invalid stored data
+    }
+  }
+
+  if (!vin) {
+    try {
+      const res = await fetch('/api/tesla/vehicles', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await res.json();
+      const list = (data?.response ?? []) as Array<{ vin?: string }>;
+      const first = list.find((v) => v?.vin);
+      if (first?.vin) {
+        vin = first.vin;
+        await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(first));
+      }
+    } catch {
+      return FALLBACK_TEXT;
+    }
+  }
+
+  if (!vin) return FALLBACK_TEXT;
+
+  try {
+    const res = await fetch(`/api/tesla/vehicle_data/${vin}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await res.json();
+    if (!res.ok) return FALLBACK_TEXT;
+    const vehicleData = data?.response ?? data;
+    return buildTextContentFromVehicleData(vehicleData);
+  } catch {
+    return FALLBACK_TEXT;
+  }
+}
+
 /**
  * Build container-based main page: text top-right, 3 images at bottom.
  */
-function buildContainerMainPageConfig() {
+function buildContainerMainPageConfig(textContent: string) {
   const imageObjects = CONTROL_IMAGES.map((cfg, i) =>
     new ImageContainerProperty({
       xPosition: cfg.x,
@@ -82,7 +138,7 @@ function buildContainerMainPageConfig() {
     paddingLength: 12,
     containerID: MAIN_TEXT_ID,
     containerName: MAIN_TEXT_NAME,
-    content: mainPageData.textContent,
+    content: textContent,
     isEventCapture: 1,
   });
 
@@ -93,8 +149,8 @@ function buildContainerMainPageConfig() {
   };
 }
 
-export function buildContainerRebuildPage() {
-  return new RebuildPageContainer(buildContainerMainPageConfig());
+export function buildContainerRebuildPage(textContent: string) {
+  return new RebuildPageContainer(buildContainerMainPageConfig(textContent));
 }
 
 /**
@@ -121,7 +177,8 @@ export async function sendControlImages(bridge: EvenAppBridge): Promise<void> {
  * Switch from credentials page to container main page. Call after tokens saved.
  */
 export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
-  await bridge.rebuildPageContainer(buildContainerRebuildPage());
+  const textContent = await fetchLivePageTextContent(bridge);
+  await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
   await sendControlImages(bridge);
   setupGlassesEventHandler(bridge);
 }
@@ -166,7 +223,8 @@ function buildCredentialsMessagePage() {
  * Start the glasses app (container main page and event handling). Call when tokens exist.
  */
 export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
-  const config = new CreateStartUpPageContainer(buildContainerMainPageConfig());
+  const textContent = await fetchLivePageTextContent(bridge);
+  const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent));
   const result = await bridge.createStartUpPageContainer(config);
 
   const resultCode =
