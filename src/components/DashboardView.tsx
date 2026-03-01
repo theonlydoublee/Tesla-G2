@@ -354,7 +354,7 @@ export function DashboardView({
           <div style={{ flex: 1, minWidth: 0 }}>
             <Button
               type="button"
-              variant="accent"
+              variant="default"
               onClick={() => window.open('https://www.tesla.com/_ak/even.thedevcave.xyz', '_blank', 'noopener,noreferrer')}
               style={{ width: '100%' }}
             >
