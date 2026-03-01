@@ -177,6 +177,8 @@ app.get('/api/tesla/vehicle_data/:vin', async (req, res) => {
 });
 
 // Tesla Fleet API command proxy - vehicle commands (lock, unlock, frunk, etc.)
+// Tesla requires commands to be signed via Vehicle Command Proxy for most vehicles.
+// Set TESLA_COMMAND_PROXY_URL to route commands through tesla-http-proxy instead of Fleet API directly.
 const ALLOWED_COMMANDS = new Set([
   'door_lock',
   'door_unlock',
@@ -189,10 +191,13 @@ const ALLOWED_COMMANDS = new Set([
   'honk_horn',
 ]);
 
+const TESLA_COMMAND_PROXY_URL = process.env.TESLA_COMMAND_PROXY_URL?.replace(/\/$/, '');
+
 app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
   const auth = req.headers.authorization;
   const { vehicleId, command } = req.params;
   const body = req.body;
+  const vin = req.body?.vin;
   if (!auth) {
     return res.status(401).json({ error: 'Missing Authorization header' });
   }
@@ -202,6 +207,8 @@ app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
   if (!ALLOWED_COMMANDS.has(command)) {
     return res.status(400).json({ error: `Unknown command: ${command}` });
   }
+  const { vin: _vin, ...cmdBody } = body || {};
+  const requestBody = Object.keys(cmdBody).length ? cmdBody : undefined;
   try {
     const fetchOpts = {
       method: 'POST',
@@ -209,12 +216,15 @@ app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
         Authorization: auth,
         'Content-Type': 'application/json',
       },
-      body: Object.keys(body || {}).length ? JSON.stringify(body) : undefined,
+      body: requestBody ? JSON.stringify(requestBody) : '{}',
     };
-    const response = await fetch(
-      `${FLEET_API_BASE}/api/1/vehicles/${vehicleId}/command/${command}`,
-      fetchOpts
-    );
+    let targetUrl;
+    if (TESLA_COMMAND_PROXY_URL && vin) {
+      targetUrl = `${TESLA_COMMAND_PROXY_URL}/api/1/vehicles/${vin}/command/${command}`;
+    } else {
+      targetUrl = `${FLEET_API_BASE}/api/1/vehicles/${vehicleId}/command/${command}`;
+    }
+    const response = await fetch(targetUrl, fetchOpts);
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (err) {

@@ -49,7 +49,9 @@ Or from project root in one go:
 npm run build && cd Docker && npm install && npm start
 ```
 
-The API listens on port 3000 and serves the static app plus `/api/tesla/exchange-token` and `/api/tesla/config`.
+The API listens on port 3000 and serves the static app plus `/api/tesla/exchange-token`, `/api/tesla/config`, and vehicle command proxy.
+
+**Vehicle commands (lock, unlock, etc.) return 403** unless you set up Tesla's Vehicle Command Proxy. See [COMMAND_SETUP.md](COMMAND_SETUP.md).
 
 ### Run in background (e.g. with pm2)
 

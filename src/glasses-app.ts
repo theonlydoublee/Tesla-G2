@@ -255,13 +255,14 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   }
 
   try {
+    const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
     await fetch(`/api/tesla/command/${vehicleId}/${command}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: reqBody ? JSON.stringify(reqBody) : undefined,
     });
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
