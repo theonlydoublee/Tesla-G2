@@ -176,6 +176,53 @@ app.get('/api/tesla/vehicle_data/:vin', async (req, res) => {
   }
 });
 
+// Tesla Fleet API command proxy - vehicle commands (lock, unlock, frunk, etc.)
+const ALLOWED_COMMANDS = new Set([
+  'door_lock',
+  'door_unlock',
+  'actuate_trunk',
+  'auto_conditioning_start',
+  'auto_conditioning_stop',
+  'charge_start',
+  'charge_stop',
+  'flash_lights',
+  'honk_horn',
+]);
+
+app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
+  const auth = req.headers.authorization;
+  const { vehicleId, command } = req.params;
+  const body = req.body;
+  if (!auth) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+  if (!vehicleId || !command) {
+    return res.status(400).json({ error: 'Missing vehicleId or command' });
+  }
+  if (!ALLOWED_COMMANDS.has(command)) {
+    return res.status(400).json({ error: `Unknown command: ${command}` });
+  }
+  try {
+    const fetchOpts = {
+      method: 'POST',
+      headers: {
+        Authorization: auth,
+        'Content-Type': 'application/json',
+      },
+      body: Object.keys(body || {}).length ? JSON.stringify(body) : undefined,
+    };
+    const response = await fetch(
+      `${FLEET_API_BASE}/api/1/vehicles/${vehicleId}/command/${command}`,
+      fetchOpts
+    );
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('Tesla command proxy error:', err);
+    res.status(500).json({ error: 'Failed to send command' });
+  }
+});
+
 // SPA fallback: serve index.html for non-API routes
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api/')) {

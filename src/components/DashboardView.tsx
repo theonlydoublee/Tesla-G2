@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { switchToMainPage } from '../glasses-app';
+import { STORAGE_KEY_ICON_SIZE, type IconSizeKey } from '../controls-config';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 const REDIRECT_URI = `${API_BASE}/auth/callback`;
@@ -21,12 +22,14 @@ const TOKEN_STALE_DAYS = 80;
 const STALE_MS = TOKEN_STALE_DAYS * 24 * 60 * 60 * 1000;
 
 interface TeslaVehicle {
+  id?: number;
   vin: string;
   display_name: string;
   model?: string;
 }
 
 interface SelectedVehicle {
+  id?: number;
   vin: string;
   name: string;
   model: string;
@@ -85,6 +88,7 @@ export function DashboardView({
   const [vehiclesError, setVehiclesError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<SelectedVehicle | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [iconSize, setIconSize] = useState<IconSizeKey>('medium');
 
   async function getValidToken(): Promise<string | null> {
     if (needsReauth) return null;
@@ -123,10 +127,11 @@ export function DashboardView({
       });
       const data = await res.json();
       if (res.ok) {
-        const raw = (data?.response ?? []) as Array<{ vin?: string; display_name?: string }>;
+        const raw = (data?.response ?? []) as Array<{ id?: number; vin?: string; display_name?: string }>;
         const list: TeslaVehicle[] = raw
-          .filter((v): v is { vin: string; display_name?: string } => !!v?.vin)
+          .filter((v): v is { id?: number; vin: string; display_name?: string } => !!v?.vin)
           .map((v) => ({
+            id: v.id,
             vin: v.vin,
             display_name: v.display_name ?? 'Unnamed',
             model: decodeModelFromVin(v.vin),
@@ -145,6 +150,18 @@ export function DashboardView({
   }
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const stored = await bridge.getLocalStorage(STORAGE_KEY_ICON_SIZE);
+      if (cancelled) return;
+      if (stored === 'small' || stored === 'medium' || stored === 'large') {
+        setIconSize(stored);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bridge]);
+
+  useEffect(() => {
     if (!accessToken || needsReauth) return;
     let cancelled = false;
     (async () => {
@@ -155,6 +172,7 @@ export function DashboardView({
           const parsed = JSON.parse(stored) as SelectedVehicle;
           if (parsed?.vin && parsed?.name) {
             setSelectedVehicle({
+              id: parsed.id,
               vin: parsed.vin,
               name: parsed.name,
               model: parsed.model ?? decodeModelFromVin(parsed.vin),
@@ -175,10 +193,11 @@ export function DashboardView({
         const data = await res.json();
         if (cancelled) return;
         if (res.ok) {
-          const raw = (data?.response ?? []) as Array<{ vin?: string; display_name?: string }>;
+          const raw = (data?.response ?? []) as Array<{ id?: number; vin?: string; display_name?: string }>;
           const list: TeslaVehicle[] = raw
-            .filter((v): v is { vin: string; display_name?: string } => !!v?.vin)
+            .filter((v): v is { id?: number; vin: string; display_name?: string } => !!v?.vin)
             .map((v) => ({
+              id: v.id,
               vin: v.vin,
               display_name: v.display_name ?? 'Unnamed',
               model: decodeModelFromVin(v.vin),
@@ -188,6 +207,7 @@ export function DashboardView({
           const firstVehicle = list[0];
           if (firstVehicle && !stored) {
             const selected: SelectedVehicle = {
+              id: firstVehicle.id,
               vin: firstVehicle.vin,
               name: firstVehicle.display_name,
               model: firstVehicle.model ?? decodeModelFromVin(firstVehicle.vin),
@@ -213,12 +233,19 @@ export function DashboardView({
 
   async function handleSelectVehicle(vehicle: TeslaVehicle) {
     const selected: SelectedVehicle = {
+      id: vehicle.id,
       vin: vehicle.vin,
       name: vehicle.display_name,
       model: vehicle.model ?? decodeModelFromVin(vehicle.vin),
     };
     await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(selected));
     setSelectedVehicle(selected);
+  }
+
+  async function handleIconSizeChange(value: IconSizeKey) {
+    setIconSize(value);
+    await bridge.setLocalStorage(STORAGE_KEY_ICON_SIZE, value);
+    await switchToMainPage(bridge);
   }
 
   async function handleRefreshAndSendToGlasses() {
@@ -424,6 +451,34 @@ export function DashboardView({
                 </Button>
               </div>
             ))}
+            <div style={{ marginTop: 12, marginBottom: 8 }}>
+              <Text variant="body-2" style={{ marginBottom: 8, display: 'block' }}>
+                Icon size:
+              </Text>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                {(['small', 'medium', 'large'] as const).map((size) => (
+                  <label
+                    key={size}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="icon-size"
+                      checked={iconSize === size}
+                      onChange={() => handleIconSizeChange(size)}
+                    />
+                    <Text variant="body-2">
+                      {size === 'small' ? 'Small (20px)' : size === 'medium' ? 'Medium (30px)' : 'Large (40px)'}
+                    </Text>
+                  </label>
+                ))}
+              </div>
+            </div>
             <Button
               type="button"
               variant="primary"

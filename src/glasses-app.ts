@@ -14,10 +14,15 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 import { setupGlassesEventHandler } from './utils/events';
-import {
-  loadAndPrepareImage,
-} from './utils/image-for-glasses';
 import { buildTextContentFromVehicleData } from './pages/main';
+import {
+  CONTROL_ACTIONS,
+  CHARGE_ACTION_INDEX,
+  STORAGE_KEY_ICON_SIZE,
+  type IconSizeKey,
+} from './controls-config';
+import { renderControlsCanvas, iconSizeToPx } from './utils/controls-canvas';
+import { OsEventTypeList } from '@evenrealities/even_hub_sdk';
 
 export type PageType = 'main' | 'controls' | 'climate' | 'charging';
 
@@ -37,19 +42,14 @@ export const PAGE_MAIN: PageType = 'main';
 const CANVAS_WIDTH = 576;
 const CANVAS_HEIGHT = 288;
 
-/** Per-image config: path, position, and size. Edit in code. */
-export interface ControlImageConfig {
-  url: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+/** Control images layout: left half and right half of 400x100 canvas. */
+const CONTROL_IMAGE_LAYOUT = [
+  { x: 88, y: 188, width: 200, height: 100 },
+  { x: 288, y: 188, width: 200, height: 100 },
+] as const;
 
-export const CONTROL_IMAGES: ControlImageConfig[] = [
-  { url: '/icons/200x100-green.png', x: 288, y: 188, width: 200, height: 100 },
-  { url: '/icons/200x100-green.png', x: 88, y: 188, width: 80, height: 80 },
-];
+/** Module-level selection state for controls. */
+let controlsSelectedIndex = 0;
 
 // Container IDs for main page: text=1, images=2,3,4
 const MAIN_TEXT_ID = 1;
@@ -100,12 +100,13 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await res.json();
-      const list = (data?.response ?? []) as Array<{ vin?: string }>;
-      const first = list.find((v) => v?.vin) as { vin: string; display_name?: string } | undefined;
+      const list = (data?.response ?? []) as Array<{ id?: number; vin?: string; display_name?: string }>;
+      const first = list.find((v) => v?.vin);
       if (first?.vin) {
         vin = first.vin;
         storedDisplayName = first.display_name ?? null;
         await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify({
+          id: first.id,
           vin: first.vin,
           name: first.display_name ?? 'Unnamed',
           model: decodeModelFromVin(first.vin),
@@ -132,10 +133,10 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
 }
 
 /**
- * Build container-based main page: text top-right, 3 images at bottom.
+ * Build container-based main page: text top-right, 2 control images at bottom.
  */
 function buildContainerMainPageConfig(textContent: string) {
-  const imageObjects = CONTROL_IMAGES.map((cfg, i) =>
+  const imageObjects = CONTROL_IMAGE_LAYOUT.map((cfg, i) =>
     new ImageContainerProperty({
       xPosition: cfg.x,
       yPosition: cfg.y,
@@ -173,22 +174,97 @@ export function buildContainerRebuildPage(textContent: string) {
 }
 
 /**
- * Load and send CONTROL_IMAGES to glasses. G2: queue sequentially.
+ * Render controls canvas and send both halves to glasses.
  */
 export async function sendControlImages(bridge: EvenAppBridge): Promise<void> {
-  for (let i = 0; i < CONTROL_IMAGES.length; i++) {
-    const cfg = CONTROL_IMAGES[i];
-    if (!cfg) continue;
-    const pngBytes = await loadAndPrepareImage(cfg.url, cfg.width, cfg.height);
-    if (pngBytes) {
-      await bridge.updateImageRawData(
-        new ImageRawDataUpdate({
-          containerID: 2 + i,
-          containerName: `ctrl-img-${i}`,
-          imageData: pngBytes,
-        })
-      );
+  const sizeKey = (await bridge.getLocalStorage(STORAGE_KEY_ICON_SIZE)) as IconSizeKey | null;
+  const iconSizePx = iconSizeToPx(sizeKey ?? 'medium');
+
+  const result = await renderControlsCanvas(iconSizePx, controlsSelectedIndex);
+  if (!result) return;
+
+  await bridge.updateImageRawData(
+    new ImageRawDataUpdate({
+      containerID: 2,
+      containerName: 'ctrl-img-0',
+      imageData: result.leftPngBytes,
+    })
+  );
+  await bridge.updateImageRawData(
+    new ImageRawDataUpdate({
+      containerID: 3,
+      containerName: 'ctrl-img-1',
+      imageData: result.rightPngBytes,
+    })
+  );
+}
+
+/**
+ * Execute Tesla command for the given control index.
+ */
+async function executeControlCommand(bridge: EvenAppBridge, index: number): Promise<void> {
+  const accessToken = await bridge.getLocalStorage(STORAGE_KEY_ACCESS_TOKEN);
+  const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
+  if (!accessToken || !stored) return;
+
+  let vehicleId: string | number | null = null;
+  let vin: string | null = null;
+  try {
+    const parsed = JSON.parse(stored) as { id?: number; vin?: string };
+    vehicleId = parsed?.id ?? null;
+    vin = parsed?.vin ?? null;
+  } catch {
+    return;
+  }
+
+  if (vehicleId == null && vin) {
+    const res = await fetch('/api/tesla/vehicles', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await res.json();
+    const list = (data?.response ?? []) as Array<{ id?: number; vin?: string }>;
+    const v = list.find((x) => x?.vin === vin);
+    if (v?.id != null) {
+      vehicleId = v.id;
+      try {
+        const p = JSON.parse(stored) as Record<string, unknown>;
+        await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify({ ...p, id: v.id }));
+      } catch {
+        // ignore
+      }
     }
+  }
+
+  if (vehicleId == null) return;
+
+  const action = CONTROL_ACTIONS[index];
+  if (!action) return;
+
+  let command = action.command;
+  let body = action.body;
+
+  if (index === CHARGE_ACTION_INDEX) {
+    const vRes = await fetch(`/api/tesla/vehicle_data/${vin}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const vData = await vRes.json();
+    const chargeState = vData?.response?.charge_state ?? vData?.charge_state;
+    const charging = chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
+    command = charging ? 'charge_stop' : 'charge_start';
+    body = undefined;
+  }
+
+  try {
+    await fetch(`/api/tesla/command/${vehicleId}/${command}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    console.warn('[Tesla] Command failed:', command, err);
   }
 }
 
@@ -199,7 +275,20 @@ export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
   const textContent = await fetchLivePageTextContent(bridge);
   await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
   await sendControlImages(bridge);
-  setupGlassesEventHandler(bridge);
+  setupGlassesEventHandler(bridge, {
+    onEvent: (payload) => {
+      const et = payload.eventType;
+      if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
+        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
+        void sendControlImages(bridge);
+      } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
+        void sendControlImages(bridge);
+      } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
+        void executeControlCommand(bridge, controlsSelectedIndex);
+      }
+    },
+  });
 }
 
 /** Single full-screen text container for "credentials needed" so glasses start up. */
@@ -254,7 +343,20 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
   }
 
   await sendControlImages(bridge);
-  setupGlassesEventHandler(bridge);
+  setupGlassesEventHandler(bridge, {
+    onEvent: (payload) => {
+      const et = payload.eventType;
+      if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
+        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
+        void sendControlImages(bridge);
+      } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
+        void sendControlImages(bridge);
+      } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
+        void executeControlCommand(bridge, controlsSelectedIndex);
+      }
+    },
+  });
 }
 
 /**
