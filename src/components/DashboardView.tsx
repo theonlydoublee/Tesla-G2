@@ -351,19 +351,23 @@ export function DashboardView({
               Re-authorize
             </Button>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <a
-              href="https://www.tesla.com/_ak/even.thedevcave.xyz"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'block', width: '100%', textDecoration: 'none' }}
-            >
-              <Button type="button" variant="accent" style={{ width: '100%' }}>
-                Add Virtual Key
-              </Button>
-            </a>
-          </div>
         </div>
+
+        <Text
+          variant="body-2"
+          style={{ marginBottom: 12, display: 'block' }}
+        >
+          To add a virtual key, open{' '}
+          <a
+            href="https://www.tesla.com/_ak/even.thedevcave.xyz"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
+          >
+            https://www.tesla.com/_ak/even.thedevcave.xyz
+          </a>{' '}
+          in a web browser on your phone with the Tesla app installed.
+        </Text>
 
         {testStatus === 'success' && (
           <Text
