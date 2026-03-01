@@ -36,50 +36,60 @@ openssl ec -in private_key.pem -pubout -out public_key.pem
 ## 3. Run Tesla HTTP Proxy (Docker)
 
 ```bash
-# Pull image
-docker pull tesla/vehicle-command:latest
+# Create directory (e.g. /root/tesla-proxy) and cd into it
+mkdir -p /root/tesla-proxy
+cd /root/tesla-proxy
 
-# Generate TLS cert (for proxy)
-mkdir -p config
+# TLS cert (secp384r1) - MUST be different from fleet-key
 openssl req -x509 -nodes -newkey ec \
   -pkeyopt ec_paramgen_curve:secp384r1 \
   -pkeyopt ec_param_enc:named_curve \
   -subj '/CN=localhost' \
-  -keyout config/tls-key.pem -out config/tls-cert.pem -sha256 -days 3650 \
+  -keyout tls-key.pem -out tls-cert.pem -sha256 -days 3650 \
   -addext "extendedKeyUsage = serverAuth" \
   -addext "keyUsage = digitalSignature, keyAgreement"
 
-# Run proxy (replace path to your tesla-private.pem)
+# Fleet key (prime256v1) - for Tesla command signing, register with Tesla
+openssl ecparam -name prime256v1 -genkey -noout -out fleet-key.pem
+
+# Run proxy (Tesla official command)
+# Use -host localhost to avoid the "Do not listen" warning - proxy listens only on localhost.
 docker run -d --name tesla-proxy \
-  -p 4443:4443 \
-  -v $(pwd)/config:/config \
-  -v $(pwd)/tesla-private.pem:/config/fleet-key.pem \
+  --security-opt=no-new-privileges:true \
+  -v /root/tesla-proxy:/config \
+  -p 127.0.0.1:4443:4443 \
   tesla/vehicle-command:latest \
   -tls-key /config/tls-key.pem \
   -cert /config/tls-cert.pem \
   -key-file /config/fleet-key.pem \
-  -host 0.0.0.0 -port 4443
+  -host localhost -port 4443
+```
+
+**Important:** `tls-key.pem` and `fleet-key.pem` must be **different keys**. The proxy exits if they match. Use secp384r1 for TLS (above) and prime256v1 for fleet-key.
+
+**Troubleshooting:** If the container exits, run without `-d` to see the full error:
+```bash
+docker run --rm -v /root/tesla-proxy:/config -p 127.0.0.1:4443:4443 \
+  tesla/vehicle-command:latest \
+  -tls-key /config/tls-key.pem -cert /config/tls-cert.pem -key-file /config/fleet-key.pem \
+  -host localhost -port 4443
 ```
 
 ## 4. Configure Server
 
-Set environment variable:
+Set environment variable (proxy uses HTTPS):
+
+```
+TESLA_COMMAND_PROXY_URL=https://localhost:4443
+```
+
+If the proxy runs on a different host, use its URL:
 
 ```
 TESLA_COMMAND_PROXY_URL=https://your-proxy-host:4443
 ```
 
-If the proxy runs on the same host as your app (e.g. behind Caddy), use internal URL:
-
-```
-TESLA_COMMAND_PROXY_URL=http://localhost:4443
-```
-
-Or, if using Docker Compose, use the service name:
-
-```
-TESLA_COMMAND_PROXY_URL=http://tesla-proxy:4443
-```
+**Self-signed cert:** The server accepts the proxy's self-signed cert automatically when `TESLA_COMMAND_PROXY_URL` is set.
 
 ## 5. User Enrollment
 

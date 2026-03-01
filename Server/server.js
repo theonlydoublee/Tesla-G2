@@ -7,8 +7,12 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { Agent } from 'undici';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+
+/** Dispatcher that accepts self-signed certs (for Tesla Command Proxy on localhost). */
+const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = join(__dirname, '..', 'dist');
@@ -221,6 +225,7 @@ app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
     let targetUrl;
     if (TESLA_COMMAND_PROXY_URL && vin) {
       targetUrl = `${TESLA_COMMAND_PROXY_URL}/api/1/vehicles/${vin}/command/${command}`;
+      fetchOpts.dispatcher = insecureDispatcher;
     } else {
       targetUrl = `${FLEET_API_BASE}/api/1/vehicles/${vehicleId}/command/${command}`;
     }
