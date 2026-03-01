@@ -434,10 +434,10 @@ export function DashboardView({
               {saveStatus === 'loading'
                 ? 'Refreshing…'
                 : saveStatus === 'success'
-                  ? 'Sent to glasses'
+                  ? 'Saved'
                   : saveStatus === 'error'
                     ? 'Failed'
-                    : 'Save & Send to Glasses'}
+                    : 'Save'}
             </Button>
           </div>
         )}
