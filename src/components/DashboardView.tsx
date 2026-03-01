@@ -11,7 +11,7 @@ import { STORAGE_KEY_ICON_SIZE, type IconSizeKey } from '../controls-config';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 const REDIRECT_URI = `${API_BASE}/auth/callback`;
-const SCOPES = 'openid offline_access vehicle_device_data';
+const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';

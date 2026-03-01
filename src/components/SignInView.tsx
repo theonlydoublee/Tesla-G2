@@ -9,7 +9,7 @@ import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
-const SCOPES = 'openid offline_access vehicle_device_data';
+const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 
 export interface SignInViewProps {
