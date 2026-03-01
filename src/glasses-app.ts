@@ -159,7 +159,7 @@ function buildContainerMainPageConfig(textContent: string) {
     containerID: MAIN_TEXT_ID,
     containerName: MAIN_TEXT_NAME,
     content: textContent,
-    isEventCapture: 0,
+    isEventCapture: 1,
   });
 
   const inputContainer = new TextContainerProperty({
@@ -178,7 +178,7 @@ function buildContainerMainPageConfig(textContent: string) {
   return {
     containerTotalNum: 4,
     imageObject: imageObjects,
-    textObject: [textContainer, inputContainer],
+    textObject: [textContainer],
   };
 }
 
@@ -328,7 +328,7 @@ function buildCredentialsMessagePage() {
     containerID: STATUS_TEXT_ID,
     containerName: STATUS_TEXT_NAME,
     content:
-      'Open your phone to sign in with Tesla.\n\nUse the app on your phone to sign in with your Tesla account.',
+      'Open your phone to sign in with Tesla.\n\nYou will be able to control and access your vehicle once authenticated.',
     isEventCapture: 1,
   });
   // Draw order: first in config = back. Put image first so it renders behind text.
