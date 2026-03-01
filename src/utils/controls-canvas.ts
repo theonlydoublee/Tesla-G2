@@ -13,7 +13,9 @@ import {
 const CANVAS_WIDTH = 400;
 const CANVAS_HEIGHT = 100;
 const HALF_WIDTH = 200;
-const ICON_GAP = 8;
+const ICON_GAP = 5;
+const LABEL_FONT = '12px sans-serif';
+const LABEL_Y = 92;
 
 /** Load image from URL and return ImageBitmap. */
 async function loadImage(url: string): Promise<ImageBitmap | null> {
@@ -88,6 +90,17 @@ export async function renderControlsCanvas(
       bitmap.close();
     }
     x += iconSizePx + ICON_GAP;
+  }
+
+  // Draw selected action label at bottom, horizontally centered
+  const selectedAction = CONTROL_ACTIONS[selectedIndex];
+  if (selectedAction && selectedIndex >= 0 && selectedIndex < CONTROL_ACTIONS.length) {
+    const label = selectedAction.id.charAt(0).toUpperCase() + selectedAction.id.slice(1);
+    ctx.font = LABEL_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, CANVAS_WIDTH / 2, LABEL_Y);
   }
 
   // Split canvas into left and right halves, convert to PNG bytes
