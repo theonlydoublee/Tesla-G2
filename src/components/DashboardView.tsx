@@ -354,7 +354,7 @@ export function DashboardView({
         </div>
 
         <Text
-          variant="body-2"
+          variant="subtitle"
           style={{ marginBottom: 12, display: 'block' }}
         >
           To add a virtual key, open{' '}
