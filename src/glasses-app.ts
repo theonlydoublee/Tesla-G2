@@ -8,6 +8,7 @@ import {
   CreateStartUpPageContainer,
   RebuildPageContainer,
   TextContainerProperty,
+  TextContainerUpgrade,
   ImageContainerProperty,
   ImageRawDataUpdate,
   StartUpPageCreateResult,
@@ -51,9 +52,11 @@ const CONTROL_IMAGE_LAYOUT = [
 /** Module-level selection state for controls. */
 let controlsSelectedIndex = 0;
 
-// Container IDs for main page: text=1, images=2,3,4
+// Container IDs for main page: text=1, images=2,3, control label=4
 const MAIN_TEXT_ID = 1;
 const MAIN_TEXT_NAME = 'main-text';
+const CONTROL_LABEL_ID = 4;
+const CONTROL_LABEL_NAME = 'ctrl-label';
 
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
@@ -162,28 +165,54 @@ function buildContainerMainPageConfig(textContent: string) {
     isEventCapture: 1,
   });
 
-  const inputContainer = new TextContainerProperty({
-    xPosition: 0,
-    yPosition: 0,
-    width: 0,
-    height: 0,
+  // Control label: bottom center, same position as old canvas label
+  const initialLabel = getControlLabel(controlsSelectedIndex);
+  const controlLabelContainer = new TextContainerProperty({
+    xPosition: 238,
+    yPosition: 270,
+    width: 100,
+    height: 18,
     borderWidth: 0,
     borderColor: 0,
-    containerID: 5,
-    containerName: "inputContainer",
-    content: textContent,
-    isEventCapture: 1,
+    borderRdaius: 0,
+    paddingLength: 0,
+    containerID: CONTROL_LABEL_ID,
+    containerName: CONTROL_LABEL_NAME,
+    content: initialLabel,
+    isEventCapture: 0,
   });
 
   return {
     containerTotalNum: 4,
     imageObject: imageObjects,
-    textObject: [textContainer],
+    textObject: [textContainer, controlLabelContainer],
   };
+}
+
+function getControlLabel(selectedIndex: number): string {
+  const action = CONTROL_ACTIONS[selectedIndex];
+  if (!action || selectedIndex < 0 || selectedIndex >= CONTROL_ACTIONS.length) return '';
+  return action.id.charAt(0).toUpperCase() + action.id.slice(1);
 }
 
 export function buildContainerRebuildPage(textContent: string) {
   return new RebuildPageContainer(buildContainerMainPageConfig(textContent));
+}
+
+/**
+ * Update the control label text container when selection changes.
+ */
+async function updateControlLabel(bridge: EvenAppBridge): Promise<void> {
+  const label = getControlLabel(controlsSelectedIndex);
+  await bridge.textContainerUpgrade(
+    new TextContainerUpgrade({
+      containerID: CONTROL_LABEL_ID,
+      containerName: CONTROL_LABEL_NAME,
+      contentOffset: 0,
+      contentLength: 50,
+      content: label,
+    })
+  );
 }
 
 /**
@@ -210,6 +239,7 @@ export async function sendControlImages(bridge: EvenAppBridge): Promise<void> {
       imageData: result.rightPngBytes,
     })
   );
+  await updateControlLabel(bridge);
 }
 
 /**
@@ -298,7 +328,7 @@ export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
       } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
         controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.CLICK_EVENT) {
+      } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
         void executeControlCommand(bridge, controlsSelectedIndex);
       }
     },
