@@ -168,7 +168,7 @@ function buildContainerMainPageConfig(textContent: string) {
   // Control label: bottom center, same position as old canvas label
   const initialLabel = getControlLabel(controlsSelectedIndex);
   const controlLabelContainer = new TextContainerProperty({
-    xPosition: 238,
+    xPosition: 138,
     yPosition: 270,
     width: 100,
     height: 18,
