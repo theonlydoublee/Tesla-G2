@@ -58,24 +58,15 @@ export async function renderControlsCanvas(
   }
   const selectorBitmap = await loadImage(SELECTOR_ICON);
 
-  // Draw icons
+  // Compute icon positions (left to right, index 0 = leftmost)
   let x = startX;
   const iconCenters: number[] = [];
-
   for (let i = 0; i < CONTROL_ACTIONS.length; i++) {
-    const bitmap = iconBitmaps[i];
     iconCenters.push(x + iconSizePx / 2);
-
-    if (bitmap) {
-      const y = centerY - iconSizePx / 2;
-      ctx.drawImage(bitmap, x, y, iconSizePx, iconSizePx);
-      bitmap.close();
-    }
-
     x += iconSizePx + ICON_GAP;
   }
 
-  // Draw selector centered on selected icon
+  // Draw selector BEHIND icons (first, so icons render on top)
   if (selectorBitmap && selectedIndex >= 0 && selectedIndex < iconCenters.length) {
     const selCenterX = iconCenters[selectedIndex];
     const selSize = Math.min(iconSizePx + 16, 48);
@@ -85,6 +76,18 @@ export async function renderControlsCanvas(
     selectorBitmap.close();
   } else if (selectorBitmap) {
     selectorBitmap.close();
+  }
+
+  // Draw icons on top (left to right: index 0 = Lock, 1 = Unlock, ... 7 = Horn)
+  x = startX;
+  for (let i = 0; i < CONTROL_ACTIONS.length; i++) {
+    const bitmap = iconBitmaps[i];
+    if (bitmap) {
+      const y = centerY - iconSizePx / 2;
+      ctx.drawImage(bitmap, x, y, iconSizePx, iconSizePx);
+      bitmap.close();
+    }
+    x += iconSizePx + ICON_GAP;
   }
 
   // Split canvas into left and right halves, convert to PNG bytes

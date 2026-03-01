@@ -279,10 +279,10 @@ export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
     onEvent: (payload) => {
       const et = payload.eventType;
       if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
-        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
+        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
       } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
+        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
       } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
         void executeControlCommand(bridge, controlsSelectedIndex);
@@ -347,10 +347,10 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
     onEvent: (payload) => {
       const et = payload.eventType;
       if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
-        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
+        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
       } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
+        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
       } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
         void executeControlCommand(bridge, controlsSelectedIndex);
