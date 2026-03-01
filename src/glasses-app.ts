@@ -159,13 +159,26 @@ function buildContainerMainPageConfig(textContent: string) {
     containerID: MAIN_TEXT_ID,
     containerName: MAIN_TEXT_NAME,
     content: textContent,
+    isEventCapture: 0,
+  });
+
+  const inputContainer = new TextContainerProperty({
+    xPosition: 0,
+    yPosition: 0,
+    width: 0,
+    height: 0,
+    borderWidth: 0,
+    borderColor: 0,
+    containerID: 5,
+    containerName: "inputContainer",
+    content: textContent,
     isEventCapture: 1,
   });
 
   return {
     containerTotalNum: 4,
     imageObject: imageObjects,
-    textObject: [textContainer],
+    textObject: [textContainer, inputContainer],
   };
 }
 
