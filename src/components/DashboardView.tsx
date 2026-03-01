@@ -359,14 +359,11 @@ export function DashboardView({
         >
           To add a virtual key, open{' '}
           <a
-            href="https://www.tesla.com/_ak/even.thedevcave.xyz"
-            target="_blank"
-            rel="noopener noreferrer"
             style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
           >
             https://www.tesla.com/_ak/even.thedevcave.xyz
           </a>{' '}
-          in a web browser on your phone with the Tesla app installed.
+          in a web browser on your phone or a computer.
         </Text>
 
         {testStatus === 'success' && (
