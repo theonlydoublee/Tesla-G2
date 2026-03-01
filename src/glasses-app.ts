@@ -162,24 +162,24 @@ function buildContainerMainPageConfig(textContent: string) {
     containerID: MAIN_TEXT_ID,
     containerName: MAIN_TEXT_NAME,
     content: textContent,
-    isEventCapture: 1,
+    isEventCapture: 0,
   });
 
   // Control label: bottom center, same position as old canvas label
   const initialLabel = getControlLabel(controlsSelectedIndex);
   const controlLabelContainer = new TextContainerProperty({
-    xPosition: 20,
-    yPosition: 20,
+    xPosition: 200,
+    yPosition: 100,
     width: 100,
     height: 40,
-    borderWidth: 2,
-    borderColor: 5,
-    borderRdaius: 2,
-    paddingLength: 2,
+    borderWidth: 0,
+    borderColor: 0,
+    borderRdaius: 0,
+    paddingLength: 0,
     containerID: CONTROL_LABEL_ID,
     containerName: CONTROL_LABEL_NAME,
     content: initialLabel,
-    isEventCapture: 0,
+    isEventCapture: 1,
   });
 
   return {
