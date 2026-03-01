@@ -351,6 +351,16 @@ export function DashboardView({
               Re-authorize
             </Button>
           </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Button
+              type="button"
+              variant="accent"
+              onClick={() => window.open('https://www.tesla.com/_ak/even.thedevcave.xyz', '_blank', 'noopener,noreferrer')}
+              style={{ width: '100%' }}
+            >
+              Add Virtual Key
+            </Button>
+          </div>
         </div>
 
         {testStatus === 'success' && (

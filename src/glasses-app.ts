@@ -169,7 +169,7 @@ function buildContainerMainPageConfig(textContent: string) {
   const initialLabel = getControlLabel(controlsSelectedIndex);
   const controlLabelContainer = new TextContainerProperty({
     xPosition: 255,
-    yPosition: 175,
+    yPosition: 160,
     width: 100,
     height: 80,
     borderWidth: 0,
