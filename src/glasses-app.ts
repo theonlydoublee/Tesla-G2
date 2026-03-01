@@ -48,7 +48,7 @@ export interface ControlImageConfig {
 
 export const CONTROL_IMAGES: ControlImageConfig[] = [
   { url: '/icons/200x100-green.png', x: 288, y: 188, width: 200, height: 100 },
-  { url: '/icons/200x100-green.png', x: 0, y: 0, width: 80, height: 80 },
+  { url: '/icons/200x100-green.png', x: 88, y: 188, width: 80, height: 80 },
 ];
 
 // Container IDs for main page: text=1, images=2,3,4
