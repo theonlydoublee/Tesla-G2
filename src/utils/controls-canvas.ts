@@ -13,7 +13,7 @@ import {
 const CANVAS_WIDTH = 400;
 const CANVAS_HEIGHT = 100;
 const HALF_WIDTH = 200;
-const ICON_GAP = 5;
+const ICON_GAP = 12;
 const LABEL_FONT = '12px sans-serif';
 const LABEL_Y = 92;
 
