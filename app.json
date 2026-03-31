@@ -19,5 +19,6 @@
       "https://*.tesla.com",
       "https://even.thedevcave.xyz"]
     }
-  ]
+  ],
+  "supported_languages": ["en"]
 }
