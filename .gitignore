@@ -161,3 +161,4 @@ API-Documentation
 .gitattributes
 
 Software Design Guidelines/
+*.ehpk
