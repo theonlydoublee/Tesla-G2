@@ -7,6 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "pack": "evenhub pack app.json dist",
+    "pack:g2": "evenhub pack app.json HubBuilds -o TeslaG2.ehpk",
+    "pack:g2:check": "evenhub pack app.json HubBuilds -o TeslaG2.ehpk --check",
     "pack:check": "evenhub pack --check app.json dist",
     "qr": "evenhub qr"
   },
@@ -18,7 +20,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.0",
+    "@evenrealities/evenhub-cli": "^0.1.11",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

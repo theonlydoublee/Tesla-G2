@@ -1,0 +1,25 @@
+{
+    "package_id": "com.theonlydoublee.tesla",
+    "edition": "202601",
+    "name": "Tesla Controls",
+    "version": "0.1.0",
+    "min_app_version": "2.0.0",
+    "min_sdk_version": "0.0.7",
+    "author": "The Only Double E",  
+    "entrypoint": "index.html",
+    "tagline": "Tesla vehicle status and controls for Even G2 glasses",
+    "description": "Tesla vehicle status and controls for Even G2 glasses",
+    "permissions": [
+      {
+        "name": "network",
+        "desc": "This app needs to access the network in order to connect to Tesla's API using a hosted proxy",
+        "whitelist": ["https://fleet-api.prd.na.vn.cloud.tesla.com",
+        "https://fleet-auth.prd.vn.cloud.tesla.com",
+        "https://auth.tesla.com",
+        "https://*.tesla.com",
+        "https://even.thedevcave.xyz"]
+      }
+    ],
+    "supported_languages": ["en"]
+    }
+  
