@@ -6,8 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
-import { switchToMainPage, sendControlImages } from '../glasses-app';
-import { STORAGE_KEY_ICON_SIZE, type IconSizeKey } from '../controls-config';
+import { switchToMainPage } from '../glasses-app';
 import { apiUrl } from '../api-base';
 import { resolveTeslaClientId } from '../tesla-client-id';
 
@@ -90,7 +89,6 @@ export function DashboardView({
   const [vehiclesError, setVehiclesError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<SelectedVehicle | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [iconSize, setIconSize] = useState<IconSizeKey>('medium');
   const [virtualKeyAdded, setVirtualKeyAdded] = useState<boolean | null>(null);
 
   async function getValidToken(): Promise<string | null> {
@@ -151,18 +149,6 @@ export function DashboardView({
       setVehiclesLoading(false);
     }
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const stored = await bridge.getLocalStorage(STORAGE_KEY_ICON_SIZE);
-      if (cancelled) return;
-      if (stored === 'small' || stored === 'medium' || stored === 'large') {
-        setIconSize(stored);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [bridge]);
 
   useEffect(() => {
     if (!accessToken || needsReauth) return;
@@ -269,12 +255,6 @@ export function DashboardView({
     };
     await bridge.setLocalStorage(STORAGE_KEY_SELECTED_VEHICLE, JSON.stringify(selected));
     setSelectedVehicle(selected);
-  }
-
-  async function handleIconSizeChange(value: IconSizeKey) {
-    setIconSize(value);
-    await bridge.setLocalStorage(STORAGE_KEY_ICON_SIZE, value);
-    await sendControlImages(bridge);
   }
 
   async function handleRefreshAndSendToGlasses() {
@@ -497,34 +477,6 @@ export function DashboardView({
                 </Button>
               </div>
             ))}
-            <div style={{ marginTop: 12, marginBottom: 8 }}>
-              <Text variant="body-2" style={{ marginBottom: 8, display: 'block' }}>
-                Icon size:
-              </Text>
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                {(['small', 'medium', 'large'] as const).map((size) => (
-                  <label
-                    key={size}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="icon-size"
-                      checked={iconSize === size}
-                      onChange={() => handleIconSizeChange(size)}
-                    />
-                    <Text variant="body-2">
-                      {size === 'small' ? 'Small (20px)' : size === 'medium' ? 'Medium (30px)' : 'Large (40px)'}
-                    </Text>
-                  </label>
-                ))}
-              </div>
-            </div>
             <Button
               type="button"
               variant="primary"

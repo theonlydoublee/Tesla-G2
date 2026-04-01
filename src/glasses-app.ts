@@ -8,34 +8,30 @@ import {
   CreateStartUpPageContainer,
   RebuildPageContainer,
   TextContainerProperty,
-  TextContainerUpgrade,
-  ImageContainerProperty,
-  ImageRawDataUpdate,
+  ListContainerProperty,
+  ListItemContainerProperty,
   StartUpPageCreateResult,
+  readNumber,
+  readString,
 } from '@evenrealities/even_hub_sdk';
 
 import { apiUrl } from './api-base';
 import {
   setupGlassesEventHandler,
   isClickEvent,
-  isScrollTopEvent,
-  isScrollBottomEvent,
 } from './utils/events';
 import { buildTextContentFromVehicleData } from './pages/main';
 import {
   CONTROL_ACTIONS,
   CHARGE_ACTION_INDEX,
-  STORAGE_KEY_ICON_SIZE,
-  type IconSizeKey,
+  buildGlassesListItemNames,
 } from './controls-config';
-import { renderControlsCanvas, iconSizeToPx } from './utils/controls-canvas';
 
 export type PageType = 'main' | 'controls' | 'climate' | 'charging';
 
 // Container IDs/names (stable across pages)
 const STATUS_TEXT_ID = 1;
 const STATUS_TEXT_NAME = 'status';
-
 
 /** Page types: main menu or themed sub-pages */
 export const PAGE_MAIN: PageType = 'main';
@@ -44,24 +40,13 @@ export const PAGE_MAIN: PageType = 'main';
 const CANVAS_WIDTH = 576;
 const CANVAS_HEIGHT = 288;
 
-/** Control images layout: left half and right half of 400x100 canvas. */
-const CONTROL_IMAGE_LAYOUT = [
-  { x: 88, y: 188, width: 200, height: 100 },
-  { x: 288, y: 188, width: 200, height: 100 },
-] as const;
+/** Main page: command list (single event capture). */
+const CMD_LIST_ID = 1;
+const CMD_LIST_NAME = 'tesla-cmd-list';
 
-/** Module-level selection state for controls. */
-let controlsSelectedIndex = 0;
-
-// Container IDs for main page (Display guide: one full-screen capture behind images)
-// https://hub.evenrealities.com/docs/guides/display
-const MAIN_TEXT_ID = 1;
+/** Main page: vehicle status text (right pane). */
+const MAIN_TEXT_ID = 2;
 const MAIN_TEXT_NAME = 'main-text';
-const CONTROL_LABEL_ID = 4;
-const CONTROL_LABEL_NAME = 'ctrl-label';
-/** Full-canvas event capture (content must be non-empty; space = invisible). */
-const EVENT_CAPTURE_ID = 5;
-const EVENT_CAPTURE_NAME = 'g2-cap';
 
 /** createStartUpPageContainer / rebuildPageContainer text limit per Even docs */
 const MAX_TEXT_CHARS_CREATE = 1000;
@@ -149,44 +134,36 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
 }
 
 /**
- * Build container-based main page per Display & UI guide:
- * full-screen text with isEventCapture:1 behind image placeholders, then visible text on top.
- * Draw order: textObject entries (back→front), then imageObject (images on top in their rects).
+ * Main page: list (left third, event capture) + vehicle text (right two-thirds).
+ * @see https://hub.evenrealities.com/docs/guides/display
  */
 function buildContainerMainPageConfig(textContent: string) {
   const clipped = clipTextForCreatePage(textContent);
+  const itemNames = buildGlassesListItemNames();
 
-  const imageObjects = CONTROL_IMAGE_LAYOUT.map((cfg, i) =>
-    new ImageContainerProperty({
-      xPosition: cfg.x,
-      yPosition: cfg.y,
-      width: cfg.width,
-      height: cfg.height,
-      containerID: 2 + i,
-      containerName: `ctrl-img-${i}`,
-    })
-  );
-
-  const eventCaptureLayer = new TextContainerProperty({
+  const listContainer = new ListContainerProperty({
     xPosition: 0,
     yPosition: 0,
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    width: 192,
+    height: 288,
     borderWidth: 0,
     borderColor: 5,
     borderRadius: 0,
     paddingLength: 0,
-    containerID: EVENT_CAPTURE_ID,
-    containerName: EVENT_CAPTURE_NAME,
-    content: ' ',
+    containerID: CMD_LIST_ID,
+    containerName: CMD_LIST_NAME,
     isEventCapture: 1,
+    itemContainer: new ListItemContainerProperty({
+      itemCount: CONTROL_ACTIONS.length,
+      itemName: itemNames,
+    }),
   });
 
   const textContainer = new TextContainerProperty({
-    xPosition: 293,
-    yPosition: 8,
-    width: 275,
-    height: 182,
+    xPosition: 192,
+    yPosition: 0,
+    width: 384,
+    height: 288,
     borderWidth: 0,
     borderColor: 5,
     borderRadius: 6,
@@ -197,87 +174,56 @@ function buildContainerMainPageConfig(textContent: string) {
     isEventCapture: 0,
   });
 
-  const initialLabel = getControlLabel(controlsSelectedIndex);
-  const controlLabelContainer = new TextContainerProperty({
-    xPosition: 255,
-    yPosition: 160,
-    width: 100,
-    height: 80,
-    borderWidth: 0,
-    borderColor: 0,
-    borderRadius: 0,
-    paddingLength: 0,
-    containerID: CONTROL_LABEL_ID,
-    containerName: CONTROL_LABEL_NAME,
-    content: initialLabel,
-    isEventCapture: 0,
-  });
-
   return {
-    containerTotalNum: 5,
-    imageObject: imageObjects,
-    textObject: [eventCaptureLayer, textContainer, controlLabelContainer],
+    containerTotalNum: 2,
+    listObject: [listContainer],
+    textObject: [textContainer],
   };
 }
 
-function getControlLabel(selectedIndex: number): string {
-  const action = CONTROL_ACTIONS[selectedIndex];
-  if (!action || selectedIndex < 0 || selectedIndex >= CONTROL_ACTIONS.length) return '';
-  return action.id.charAt(0).toUpperCase() + action.id.slice(1);
+/**
+ * Map listEvent to CONTROL_ACTIONS index.
+ * G2 quirk (API-Documentation/G2.md): host may omit index (and sometimes name) for row 0 —
+ * use `defaultToFirstRowOnEmpty` on click when both are absent.
+ */
+function resolveListCommandIndex(
+  listEvent: object,
+  options: { defaultToFirstRowOnEmpty?: boolean } = {},
+): number | null {
+  const names = buildGlassesListItemNames();
+  const n = CONTROL_ACTIONS.length;
+
+  const idx = readNumber(
+    listEvent,
+    'currentSelectItemIndex',
+    'CurrentSelect_ItemIndex',
+  );
+  if (idx !== undefined && Number.isInteger(idx) && idx >= 0 && idx < n) {
+    return idx;
+  }
+
+  const nameRaw = readString(
+    listEvent,
+    'currentSelectItemName',
+    'CurrentSelect_ItemName',
+  );
+  const nameTrimmed = nameRaw != null ? String(nameRaw).trim() : '';
+  const hasName = nameTrimmed.length > 0;
+
+  if (hasName) {
+    const i = names.indexOf(nameTrimmed);
+    if (i >= 0) return i;
+    return null;
+  }
+
+  if (options.defaultToFirstRowOnEmpty) {
+    return 0;
+  }
+  return null;
 }
 
 export function buildContainerRebuildPage(textContent: string) {
   return new RebuildPageContainer(buildContainerMainPageConfig(textContent));
-}
-
-/**
- * Set the control label text container to arbitrary content.
- */
-async function setControlLabelContent(bridge: EvenAppBridge, content: string): Promise<void> {
-  await bridge.textContainerUpgrade(
-    new TextContainerUpgrade({
-      containerID: CONTROL_LABEL_ID,
-      containerName: CONTROL_LABEL_NAME,
-      contentOffset: 0,
-      contentLength: 50,
-      content,
-    })
-  );
-}
-
-/**
- * Update the control label text container when selection changes.
- */
-async function updateControlLabel(bridge: EvenAppBridge): Promise<void> {
-  await setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
-}
-
-/**
- * Render controls canvas and send both halves to glasses.
- */
-export async function sendControlImages(bridge: EvenAppBridge): Promise<void> {
-  const sizeKey = (await bridge.getLocalStorage(STORAGE_KEY_ICON_SIZE)) as IconSizeKey | null;
-  const iconSizePx = iconSizeToPx(sizeKey ?? 'medium');
-
-  const result = await renderControlsCanvas(iconSizePx, controlsSelectedIndex);
-  if (!result) return;
-
-  // Display guide: no concurrent image sends — await each update sequentially.
-  await bridge.updateImageRawData(
-    new ImageRawDataUpdate({
-      containerID: 2,
-      containerName: 'ctrl-img-0',
-      imageData: result.leftPngBytes,
-    })
-  );
-  await bridge.updateImageRawData(
-    new ImageRawDataUpdate({
-      containerID: 3,
-      containerName: 'ctrl-img-1',
-      imageData: result.rightPngBytes,
-    })
-  );
-  await updateControlLabel(bridge);
 }
 
 /**
@@ -324,8 +270,6 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   let command = action.command;
   let body = action.body;
 
-  await setControlLabelContent(bridge, 'Sending');
-
   if (index === CHARGE_ACTION_INDEX) {
     try {
       const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
@@ -338,10 +282,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
       body = undefined;
     } catch (err) {
       console.warn('[Tesla] Charge state fetch failed:', err);
-      await setControlLabelContent(bridge, 'Failed');
-      setTimeout(() => {
-        void setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
-      }, 3000);
+      await refreshGlassesMainPageUi(bridge);
       return;
     }
   }
@@ -356,31 +297,23 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
       },
       body: reqBody ? JSON.stringify(reqBody) : undefined,
     });
-    if (res.ok) {
-      await setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
-    } else {
-      await setControlLabelContent(bridge, 'Failed');
-      setTimeout(() => {
-        void setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
-      }, 3000);
+    if (!res.ok) {
+      console.warn('[Tesla] Command HTTP error:', command, res.status);
     }
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
-    await setControlLabelContent(bridge, 'Failed');
-    setTimeout(() => {
-      void setControlLabelContent(bridge, getControlLabel(controlsSelectedIndex));
-    }, 3000);
+  } finally {
+    await refreshGlassesMainPageUi(bridge);
   }
 }
 
-/** Rebuild main containers + control images (e.g. after foreground resume). */
+/** Rebuild main containers (e.g. after foreground resume or command completion). */
 async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
   const textContent = await fetchLivePageTextContent(bridge);
   await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
-  await sendControlImages(bridge);
 }
 
-/** Input & Events guide: textEvent routing, click/scroll/double-click, lifecycle. */
+/** Input & Events guide: listEvent / textEvent / double-click / lifecycle. */
 function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   setupGlassesEventHandler(bridge, {
     onForegroundEnter: () => {
@@ -388,15 +321,12 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
     },
     onEvent: (payload) => {
       const et = payload.eventType;
-      if (isScrollTopEvent(et)) {
-        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
-        void sendControlImages(bridge);
-      } else if (isScrollBottomEvent(et)) {
-        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
-        void sendControlImages(bridge);
-      } else if (isClickEvent(et)) {
-        void executeControlCommand(bridge, controlsSelectedIndex);
-      }
+      if (!isClickEvent(et) || payload.listEvent == null) return;
+      const index = resolveListCommandIndex(payload.listEvent, {
+        defaultToFirstRowOnEmpty: true,
+      });
+      if (index == null) return;
+      void executeControlCommand(bridge, index);
     },
   });
 }
@@ -411,15 +341,6 @@ export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
 
 /** Single full-screen text container for "credentials needed" so glasses start up. */
 function buildCredentialsMessagePage() {
-  // const bgImage = new ImageContainerProperty({
-  //   xPosition: 0,
-  //   yPosition: 0,
-  //   width: BG_IMAGE_WIDTH,
-  //   height: BG_IMAGE_HEIGHT,
-  //   containerID: BG_IMAGE_ID,
-  //   containerName: BG_IMAGE_NAME,
-  // });
-
   const msg =
     'Open your phone to sign in with Tesla.\n\nYou will be able to control and access your vehicle once authenticated.';
   const text = new TextContainerProperty({
@@ -442,9 +363,6 @@ function buildCredentialsMessagePage() {
   });
 }
 
-
-
-
 /**
  * Start the glasses app (container main page and event handling). Call when tokens exist.
  */
@@ -458,7 +376,6 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
     return;
   }
 
-  await sendControlImages(bridge);
   attachMainPageGlassesHandlers(bridge);
 }
 

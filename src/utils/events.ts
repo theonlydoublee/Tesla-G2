@@ -2,32 +2,25 @@
  * Glasses input — aligned with Even Hub routing and event types.
  * @see https://hub.evenrealities.com/docs/guides/input-events
  *
- * Text capture containers deliver input on `event.textEvent`; list capture on `event.listEvent`.
- * This app uses a text capture layer, so we prefer `textEvent` when present.
+ * List capture containers deliver input on `event.listEvent`; text on `event.textEvent`.
+ * Main Tesla page uses a list capture layer, so we prefer `listEvent` when present.
  */
 
-import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
+import type { EvenAppBridge, EvenHubEvent } from '@evenrealities/even_hub_sdk';
 import { OsEventTypeList } from '@evenrealities/even_hub_sdk';
-
-/** Raw event object passed to onEvenHubEvent callback. */
-export interface EvenHubEvent {
-  listEvent?: { eventType?: number };
-  textEvent?: { eventType?: number };
-  sysEvent?: { eventType?: number };
-}
 
 /** Parsed payload from an EvenHub glasses-oriented event. */
 export interface GlassesEventPayload {
   eventType: number | undefined;
-  listEvent: unknown;
-  textEvent: unknown;
-  sysEvent: unknown;
+  listEvent: EvenHubEvent['listEvent'];
+  textEvent: EvenHubEvent['textEvent'];
+  sysEvent: EvenHubEvent['sysEvent'];
 }
 
 /**
  * Resolve `eventType` per host routing (Input & Events — Event Routing).
- * When `textEvent` is present, use `textEvent.eventType` even if `undefined` (single press).
- * Otherwise fall back to listEvent, then sysEvent (lifecycle may use sys only).
+ * When `listEvent` is present (list capture), use `listEvent.eventType` even if `undefined` (single press).
+ * Else `textEvent` (credentials page), then `sysEvent`.
  */
 export function parseGlassesEvent(event: EvenHubEvent): GlassesEventPayload {
   const listEvent = event.listEvent;
@@ -35,9 +28,11 @@ export function parseGlassesEvent(event: EvenHubEvent): GlassesEventPayload {
   const sysEvent = event.sysEvent;
 
   const eventType =
-    textEvent != null
-      ? textEvent.eventType
-      : listEvent?.eventType ?? sysEvent?.eventType;
+    listEvent != null
+      ? listEvent.eventType
+      : textEvent != null
+        ? textEvent.eventType
+        : sysEvent?.eventType;
 
   return { eventType, listEvent, textEvent, sysEvent };
 }
@@ -101,7 +96,7 @@ export function setupGlassesEventHandler(
   } = options;
 
   bridge.onEvenHubEvent((event) => {
-    const payload = parseGlassesEvent(event as EvenHubEvent);
+    const payload = parseGlassesEvent(event);
     const { eventType } = payload;
 
     if (isDoubleClickEvent(eventType)) {
