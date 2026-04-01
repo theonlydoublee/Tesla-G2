@@ -8,6 +8,8 @@ import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-real
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { switchToMainPage, sendControlImages } from '../glasses-app';
 import { STORAGE_KEY_ICON_SIZE, type IconSizeKey } from '../controls-config';
+import { apiUrl } from '../api-base';
+import { resolveTeslaClientId } from '../tesla-client-id';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 const REDIRECT_URI = `${API_BASE}/auth/callback`;
@@ -96,7 +98,7 @@ export function DashboardView({
     let tokenToUse = accessToken;
     if (isTokenStale(tokenRefreshedAt)) {
       try {
-        const res = await fetch('/api/tesla/refresh-token', {
+        const res = await fetch(apiUrl('/api/tesla/refresh-token'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh_token: refreshToken }),
@@ -123,7 +125,7 @@ export function DashboardView({
     setVehiclesLoading(true);
     setVehiclesError(null);
     try {
-      const res = await fetch('/api/tesla/vehicles', {
+      const res = await fetch(apiUrl('/api/tesla/vehicles'), {
         headers: { Authorization: `Bearer ${tokenToUse}` },
       });
       const data = await res.json();
@@ -188,7 +190,7 @@ export function DashboardView({
       setVehiclesLoading(true);
       setVehiclesError(null);
       try {
-        const res = await fetch('/api/tesla/vehicles', {
+        const res = await fetch(apiUrl('/api/tesla/vehicles'), {
           headers: { Authorization: `Bearer ${tokenToUse}` },
         });
         const data = await res.json();
@@ -246,7 +248,7 @@ export function DashboardView({
         const params = new URLSearchParams();
         if (selectedVehicle.id != null) params.set('vehicleId', String(selectedVehicle.id));
         if (selectedVehicle.vin) params.set('vin', selectedVehicle.vin);
-        const res = await fetch(`/api/tesla/check-virtual-key?${params}`, {
+        const res = await fetch(apiUrl(`/api/tesla/check-virtual-key?${params}`), {
           headers: { Authorization: `Bearer ${tokenToUse}` },
         });
         const data = await res.json();
@@ -298,7 +300,7 @@ export function DashboardView({
       return;
     }
     try {
-      const res = await fetch('/api/tesla/vehicles', {
+      const res = await fetch(apiUrl('/api/tesla/vehicles'), {
         headers: { Authorization: `Bearer ${tokenToUse}` },
       });
       const data = await res.json();
@@ -327,13 +329,12 @@ export function DashboardView({
     } catch {
       // ignore
     }
-    const r = await fetch('/api/tesla/config');
-    const d = await r.json();
-    const cid = d?.clientId;
-    if (!cid) {
-      setReAuthError('Server config missing. Retry re-authorize.');
+    const resolved = await resolveTeslaClientId();
+    if (!resolved.ok) {
+      setReAuthError(resolved.message);
       return;
     }
+    const cid = resolved.clientId;
     const state = generateState();
     sessionStorage.setItem('tesla_oauth_state', state);
     const params = new URLSearchParams({

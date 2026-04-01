@@ -13,6 +13,7 @@ import { setTokenDisplay } from './pages/main';
 import { SignInView } from './components/SignInView';
 import { DashboardView } from './components/DashboardView';
 import { AuthCallbackView } from './components/AuthCallbackView';
+import { apiUrl } from './api-base';
 import './App.css';
 
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
@@ -72,7 +73,7 @@ export function App() {
 
           if (isTokenStale(refreshedAt ?? null)) {
             try {
-              const res = await fetch('/api/tesla/refresh-token', {
+              const res = await fetch(apiUrl('/api/tesla/refresh-token'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refresh_token: refresh }),

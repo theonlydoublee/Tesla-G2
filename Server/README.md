@@ -25,6 +25,8 @@ cp .env.example .env
 # TESLA_CLIENT_SECRET=xxx
 # TESLA_REDIRECT_URI=https://even.thedevcave.xyz/auth/callback
 # ALLOWED_ORIGIN=https://even.thedevcave.xyz
+# Optional: comma-separated extra origins when the UI is hosted elsewhere (e.g. Even Hub static pack)
+# ALLOWED_ORIGINS=http://192.168.1.10:8080
 ```
 
 ## Build and run

@@ -100,6 +100,10 @@ Each user must add your app's key to their vehicle:
 3. They approve adding the key to the vehicle
 4. The vehicle must be online and paired with the phone
 
+## Even Hub static pack (phone-hosted `dist`)
+
+The phone serves only static files; Tesla OAuth and Fleet proxy calls go to this Node server. Build the app with `VITE_API_BASE_URL` set to this server’s public origin (see the project root [README.md](../README.md) and [.env.example](../.env.example)). On the server, set `ALLOWED_ORIGINS` to include the WebView `Origin` header value that Even Hub uses when loading the plugin, in addition to `ALLOWED_ORIGIN`.
+
 ## References
 
 - [Tesla Vehicle Command SDK](https://github.com/teslamotors/vehicle-command)

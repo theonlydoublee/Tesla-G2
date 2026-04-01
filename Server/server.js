@@ -22,9 +22,29 @@ const TESLA_TOKEN_URL = 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/tok
 const FLEET_AUDIENCE = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
 
 const PORT = process.env.PORT || 3000;
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://even.thedevcave.xyz';
+const DEFAULT_ORIGIN = 'https://even.thedevcave.xyz';
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || DEFAULT_ORIGIN;
+const ALLOWED_ORIGINS_EXTRA = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const corsOrigins = [...new Set([ALLOWED_ORIGIN, ...ALLOWED_ORIGINS_EXTRA])];
+/** `*` in ALLOWED_ORIGIN or ALLOWED_ORIGINS means reflect any Origin (do not list literal "*"). */
+const CORS_ALLOW_ALL =
+  ALLOWED_ORIGIN === '*' ||
+  ALLOWED_ORIGINS_EXTRA.includes('*') ||
+  corsOrigins.length === 1 && corsOrigins[0] === '*';
 
-app.use(cors({ origin: ALLOWED_ORIGIN }));
+app.use(
+  cors({
+    origin(origin, cb) {
+      if (CORS_ALLOW_ALL) return cb(null, true);
+      if (!origin) return cb(null, true);
+      if (corsOrigins.includes(origin)) return cb(null, true);
+      cb(null, false);
+    },
+  }),
+);
 app.use(express.json());
 
 // Prevent caching of HTML and assets so new builds are always used

@@ -14,7 +14,13 @@ import {
   StartUpPageCreateResult,
 } from '@evenrealities/even_hub_sdk';
 
-import { setupGlassesEventHandler } from './utils/events';
+import { apiUrl } from './api-base';
+import {
+  setupGlassesEventHandler,
+  isClickEvent,
+  isScrollTopEvent,
+  isScrollBottomEvent,
+} from './utils/events';
 import { buildTextContentFromVehicleData } from './pages/main';
 import {
   CONTROL_ACTIONS,
@@ -23,13 +29,8 @@ import {
   type IconSizeKey,
 } from './controls-config';
 import { renderControlsCanvas, iconSizeToPx } from './utils/controls-canvas';
-import { OsEventTypeList } from '@evenrealities/even_hub_sdk';
 
 export type PageType = 'main' | 'controls' | 'climate' | 'charging';
-
-// Layout: left status block, right menu list (guidelines: 16px margin, 8px vertical)
-const MARGIN = 16;
-const MARGIN_V = 8;
 
 // Container IDs/names (stable across pages)
 const STATUS_TEXT_ID = 1;
@@ -52,11 +53,23 @@ const CONTROL_IMAGE_LAYOUT = [
 /** Module-level selection state for controls. */
 let controlsSelectedIndex = 0;
 
-// Container IDs for main page: text=1, images=2,3, control label=4
+// Container IDs for main page (Display guide: one full-screen capture behind images)
+// https://hub.evenrealities.com/docs/guides/display
 const MAIN_TEXT_ID = 1;
 const MAIN_TEXT_NAME = 'main-text';
 const CONTROL_LABEL_ID = 4;
 const CONTROL_LABEL_NAME = 'ctrl-label';
+/** Full-canvas event capture (content must be non-empty; space = invisible). */
+const EVENT_CAPTURE_ID = 5;
+const EVENT_CAPTURE_NAME = 'g2-cap';
+
+/** createStartUpPageContainer / rebuildPageContainer text limit per Even docs */
+const MAX_TEXT_CHARS_CREATE = 1000;
+
+function clipTextForCreatePage(s: string): string {
+  if (s.length <= MAX_TEXT_CHARS_CREATE) return s;
+  return `${s.slice(0, MAX_TEXT_CHARS_CREATE - 2)}\n…`;
+}
 
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
@@ -99,7 +112,7 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
 
   if (!vin) {
     try {
-      const res = await fetch('/api/tesla/vehicles', {
+      const res = await fetch(apiUrl('/api/tesla/vehicles'), {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await res.json();
@@ -123,7 +136,7 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
   if (!vin) return FALLBACK_TEXT;
 
   try {
-    const res = await fetch(`/api/tesla/vehicle_data/${vin}`, {
+    const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const data = await res.json();
@@ -136,9 +149,13 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
 }
 
 /**
- * Build container-based main page: text top-right, 2 control images at bottom.
+ * Build container-based main page per Display & UI guide:
+ * full-screen text with isEventCapture:1 behind image placeholders, then visible text on top.
+ * Draw order: textObject entries (back→front), then imageObject (images on top in their rects).
  */
 function buildContainerMainPageConfig(textContent: string) {
+  const clipped = clipTextForCreatePage(textContent);
+
   const imageObjects = CONTROL_IMAGE_LAYOUT.map((cfg, i) =>
     new ImageContainerProperty({
       xPosition: cfg.x,
@@ -150,6 +167,21 @@ function buildContainerMainPageConfig(textContent: string) {
     })
   );
 
+  const eventCaptureLayer = new TextContainerProperty({
+    xPosition: 0,
+    yPosition: 0,
+    width: CANVAS_WIDTH,
+    height: CANVAS_HEIGHT,
+    borderWidth: 0,
+    borderColor: 5,
+    borderRadius: 0,
+    paddingLength: 0,
+    containerID: EVENT_CAPTURE_ID,
+    containerName: EVENT_CAPTURE_NAME,
+    content: ' ',
+    isEventCapture: 1,
+  });
+
   const textContainer = new TextContainerProperty({
     xPosition: 293,
     yPosition: 8,
@@ -157,15 +189,14 @@ function buildContainerMainPageConfig(textContent: string) {
     height: 182,
     borderWidth: 0,
     borderColor: 5,
-    borderRdaius: 6,
+    borderRadius: 6,
     paddingLength: 12,
     containerID: MAIN_TEXT_ID,
     containerName: MAIN_TEXT_NAME,
-    content: textContent,
+    content: clipped,
     isEventCapture: 0,
   });
 
-  // Control label: bottom center, same position as old canvas label
   const initialLabel = getControlLabel(controlsSelectedIndex);
   const controlLabelContainer = new TextContainerProperty({
     xPosition: 255,
@@ -174,18 +205,18 @@ function buildContainerMainPageConfig(textContent: string) {
     height: 80,
     borderWidth: 0,
     borderColor: 0,
-    borderRdaius: 0,
+    borderRadius: 0,
     paddingLength: 0,
     containerID: CONTROL_LABEL_ID,
     containerName: CONTROL_LABEL_NAME,
     content: initialLabel,
-    isEventCapture: 1,
+    isEventCapture: 0,
   });
 
   return {
-    containerTotalNum: 4,
+    containerTotalNum: 5,
     imageObject: imageObjects,
-    textObject: [textContainer, controlLabelContainer],
+    textObject: [eventCaptureLayer, textContainer, controlLabelContainer],
   };
 }
 
@@ -231,6 +262,7 @@ export async function sendControlImages(bridge: EvenAppBridge): Promise<void> {
   const result = await renderControlsCanvas(iconSizePx, controlsSelectedIndex);
   if (!result) return;
 
+  // Display guide: no concurrent image sends — await each update sequentially.
   await bridge.updateImageRawData(
     new ImageRawDataUpdate({
       containerID: 2,
@@ -267,7 +299,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   }
 
   if (vehicleId == null && vin) {
-    const res = await fetch('/api/tesla/vehicles', {
+    const res = await fetch(apiUrl('/api/tesla/vehicles'), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const data = await res.json();
@@ -296,7 +328,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
 
   if (index === CHARGE_ACTION_INDEX) {
     try {
-      const vRes = await fetch(`/api/tesla/vehicle_data/${vin}`, {
+      const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const vData = await vRes.json();
@@ -316,7 +348,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
 
   try {
     const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
-    const res = await fetch(`/api/tesla/command/${vehicleId}/${command}`, {
+    const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -341,27 +373,40 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   }
 }
 
-/**
- * Switch from credentials page to container main page. Call after tokens saved.
- */
-export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
+/** Rebuild main containers + control images (e.g. after foreground resume). */
+async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
   const textContent = await fetchLivePageTextContent(bridge);
   await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
   await sendControlImages(bridge);
+}
+
+/** Input & Events guide: textEvent routing, click/scroll/double-click, lifecycle. */
+function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   setupGlassesEventHandler(bridge, {
+    onForegroundEnter: () => {
+      void refreshGlassesMainPageUi(bridge);
+    },
     onEvent: (payload) => {
       const et = payload.eventType;
-      if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
+      if (isScrollTopEvent(et)) {
         controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+      } else if (isScrollBottomEvent(et)) {
         controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
         void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.CLICK_EVENT || et === undefined) {
+      } else if (isClickEvent(et)) {
         void executeControlCommand(bridge, controlsSelectedIndex);
       }
     },
   });
+}
+
+/**
+ * Switch from credentials page to container main page. Call after tokens saved.
+ */
+export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
+  await refreshGlassesMainPageUi(bridge);
+  attachMainPageGlassesHandlers(bridge);
 }
 
 /** Single full-screen text container for "credentials needed" so glasses start up. */
@@ -375,22 +420,22 @@ function buildCredentialsMessagePage() {
   //   containerName: BG_IMAGE_NAME,
   // });
 
+  const msg =
+    'Open your phone to sign in with Tesla.\n\nYou will be able to control and access your vehicle once authenticated.';
   const text = new TextContainerProperty({
-    xPosition: MARGIN,
-    yPosition: MARGIN_V,
-    width: CANVAS_WIDTH - MARGIN * 2,
-    height: CANVAS_HEIGHT - MARGIN_V * 2,
+    xPosition: 0,
+    yPosition: 0,
+    width: CANVAS_WIDTH,
+    height: CANVAS_HEIGHT,
     borderWidth: 0,
     borderColor: 5,
-    borderRdaius: 6,
+    borderRadius: 6,
     paddingLength: 12,
     containerID: STATUS_TEXT_ID,
     containerName: STATUS_TEXT_NAME,
-    content:
-      'Open your phone to sign in with Tesla.\n\nYou will be able to control and access your vehicle once authenticated.',
+    content: clipTextForCreatePage(msg),
     isEventCapture: 1,
   });
-  // Draw order: first in config = back. Put image first so it renders behind text.
   return new CreateStartUpPageContainer({
     containerTotalNum: 1,
     textObject: [text],
@@ -407,29 +452,14 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
   const textContent = await fetchLivePageTextContent(bridge);
   const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent));
   const result = await bridge.createStartUpPageContainer(config);
-
-  const resultCode =
-    typeof result === 'number' ? result : (result as { index?: number })?.index ?? result;
-  if (resultCode !== StartUpPageCreateResult.success && resultCode !== 0) {
-    console.error('[Tesla] createStartUpPageContainer failed:', result);
+  const created = StartUpPageCreateResult.normalize(result);
+  if (created !== StartUpPageCreateResult.success) {
+    console.error('[Tesla] createStartUpPageContainer failed:', result, created);
     return;
   }
 
   await sendControlImages(bridge);
-  setupGlassesEventHandler(bridge, {
-    onEvent: (payload) => {
-      const et = payload.eventType;
-      if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
-        controlsSelectedIndex = (controlsSelectedIndex - 1 + CONTROL_ACTIONS.length) % CONTROL_ACTIONS.length;
-        void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-        controlsSelectedIndex = (controlsSelectedIndex + 1) % CONTROL_ACTIONS.length;
-        void sendControlImages(bridge);
-      } else if (et === OsEventTypeList.CLICK_EVENT) {
-        void executeControlCommand(bridge, controlsSelectedIndex);
-      }
-    },
-  });
+  attachMainPageGlassesHandlers(bridge);
 }
 
 /**
@@ -441,10 +471,9 @@ export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Pro
     buildCredentialsMessagePage()
   );
 
-  const resultCode =
-    typeof result === 'number' ? result : (result as { index?: number })?.index ?? result;
-  if (resultCode !== StartUpPageCreateResult.success && resultCode !== 0) {
-    console.error('[Tesla] createStartUpPageContainer (credentials message) failed:', result);
+  const created = StartUpPageCreateResult.normalize(result);
+  if (created !== StartUpPageCreateResult.success) {
+    console.error('[Tesla] createStartUpPageContainer (credentials message) failed:', result, created);
     return;
   }
 

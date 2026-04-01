@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
+import { apiUrl } from '../api-base';
 
 const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
@@ -36,7 +37,7 @@ export function AuthCallbackView() {
 
     sessionStorage.removeItem('tesla_oauth_state');
 
-    fetch('/api/tesla/exchange-token', {
+    fetch(apiUrl('/api/tesla/exchange-token'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code, redirect_uri: REDIRECT_URI }),

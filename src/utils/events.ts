@@ -1,6 +1,9 @@
 /**
- * Glasses event parsing and handler setup.
- * Centralizes EvenHub event listening so callers can react to all interaction types.
+ * Glasses input — aligned with Even Hub routing and event types.
+ * @see https://hub.evenrealities.com/docs/guides/input-events
+ *
+ * Text capture containers deliver input on `event.textEvent`; list capture on `event.listEvent`.
+ * This app uses a text capture layer, so we prefer `textEvent` when present.
  */
 
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
@@ -13,7 +16,7 @@ export interface EvenHubEvent {
   sysEvent?: { eventType?: number };
 }
 
-/** Parsed payload from a glasses event (list, text, or sys). */
+/** Parsed payload from an EvenHub glasses-oriented event. */
 export interface GlassesEventPayload {
   eventType: number | undefined;
   listEvent: unknown;
@@ -22,49 +25,86 @@ export interface GlassesEventPayload {
 }
 
 /**
- * Extract event type and sub-events from an EvenHub event.
- * Use eventType to branch on action; use listEvent/textEvent/sysEvent for container IDs etc.
+ * Resolve `eventType` per host routing (Input & Events — Event Routing).
+ * When `textEvent` is present, use `textEvent.eventType` even if `undefined` (single press).
+ * Otherwise fall back to listEvent, then sysEvent (lifecycle may use sys only).
  */
 export function parseGlassesEvent(event: EvenHubEvent): GlassesEventPayload {
   const listEvent = event.listEvent;
   const textEvent = event.textEvent;
   const sysEvent = event.sysEvent;
+
   const eventType =
-    listEvent?.eventType ?? textEvent?.eventType ?? sysEvent?.eventType;
+    textEvent != null
+      ? textEvent.eventType
+      : listEvent?.eventType ?? sysEvent?.eventType;
+
   return { eventType, listEvent, textEvent, sysEvent };
+}
+
+/** Single press: CLICK_EVENT is 0; SDK may normalize to `undefined`. */
+export function isClickEvent(eventType: number | undefined): boolean {
+  return eventType === OsEventTypeList.CLICK_EVENT || eventType === undefined;
+}
+
+export function isScrollTopEvent(eventType: number | undefined): boolean {
+  return eventType === OsEventTypeList.SCROLL_TOP_EVENT;
+}
+
+export function isScrollBottomEvent(eventType: number | undefined): boolean {
+  return eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT;
 }
 
 export function isDoubleClickEvent(eventType: number | undefined): boolean {
   return eventType === OsEventTypeList.DOUBLE_CLICK_EVENT;
 }
 
+export function isForegroundEnterEvent(eventType: number | undefined): boolean {
+  return eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT;
+}
+
+export function isForegroundExitEvent(eventType: number | undefined): boolean {
+  return eventType === OsEventTypeList.FOREGROUND_EXIT_EVENT;
+}
+
+export function isAbnormalExitEvent(eventType: number | undefined): boolean {
+  return eventType === OsEventTypeList.ABNORMAL_EXIT_EVENT;
+}
+
 export type GlassesEventHandlerOptions = {
-  /** Called on double-tap. Default: bridge.shutDownPageContainer(1). */
+  /** Default: bridge.shutDownPageContainer(1). */
   onDoubleClick?: () => void;
-  /** Called for every event so you can branch on eventType / listEvent / textEvent / sysEvent. */
+  /** App returned to foreground — refresh data / resume work. */
+  onForegroundEnter?: () => void;
+  /** App backgrounded — pause timers / heavy work. */
+  onForegroundExit?: () => void;
+  /** Bluetooth / unexpected disconnect. */
+  onAbnormalExit?: () => void;
+  /** Primary interaction handler (clicks, scrolls, etc.). */
   onEvent?: (payload: GlassesEventPayload) => void;
 };
 
 /**
- * Register the glasses event listener. Use after the main page (or credentials page) is shown.
- * By default, double-tap calls bridge.shutDownPageContainer(1).
- * Pass onEvent to handle all interactions and do something based on the action.
+ * Register onEvenHubEvent after the glasses page is shown.
+ * Double-press is handled before onEvent (default exits page container).
  */
 export function setupGlassesEventHandler(
   bridge: EvenAppBridge,
-  options: GlassesEventHandlerOptions = {}
+  options: GlassesEventHandlerOptions = {},
 ): void {
-  const { onDoubleClick, onEvent } = options;
-
+  const {
+    onDoubleClick,
+    onForegroundEnter,
+    onForegroundExit,
+    onAbnormalExit,
+    onEvent,
+  } = options;
 
   bridge.onEvenHubEvent((event) => {
-    const payload = parseGlassesEvent(event);
-    const listEvent = event.listEvent;
-    const textEvent = event.textEvent;
-    const sysEvent = event.sysEvent;
-    const eventType = listEvent?.eventType ?? textEvent?.eventType ?? sysEvent?.eventType;
+    const payload = parseGlassesEvent(event as EvenHubEvent);
+    const { eventType } = payload;
 
-    if (isDoubleClickEvent(payload.eventType)) {
+    if (isDoubleClickEvent(eventType)) {
       if (onDoubleClick) {
         onDoubleClick();
       } else {
@@ -72,10 +112,16 @@ export function setupGlassesEventHandler(
       }
     }
 
-    if (onEvent) {
-      onEvent(payload);
+    if (isForegroundEnterEvent(eventType)) {
+      onForegroundEnter?.();
+    }
+    if (isForegroundExitEvent(eventType)) {
+      onForegroundExit?.();
+    }
+    if (isAbnormalExitEvent(eventType)) {
+      onAbnormalExit?.();
     }
 
-    
+    onEvent?.(payload);
   });
 }
