@@ -146,7 +146,7 @@ function buildContainerMainPageConfig(textContent: string) {
     yPosition: 0,
     width: 192,
     height: 288,
-    borderWidth: 0,
+    borderWidth: 2,
     borderColor: 5,
     borderRadius: 0,
     paddingLength: 0,
@@ -160,9 +160,9 @@ function buildContainerMainPageConfig(textContent: string) {
   });
 
   const textContainer = new TextContainerProperty({
-    xPosition: 192,
+    xPosition: 242,
     yPosition: 0,
-    width: 384,
+    width: 334,
     height: 288,
     borderWidth: 0,
     borderColor: 5,

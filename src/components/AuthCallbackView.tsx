@@ -9,6 +9,8 @@ import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { apiUrl } from '../api-base';
 
 const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
+// const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
+
 const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
 const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';

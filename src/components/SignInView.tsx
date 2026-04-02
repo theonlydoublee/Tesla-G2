@@ -8,8 +8,8 @@ import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-real
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { resolveTeslaClientId } from '../tesla-client-id';
 
-const REDIRECT_URI =
-  typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
+const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
+// const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 

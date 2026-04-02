@@ -11,6 +11,7 @@ import { apiUrl } from '../api-base';
 import { resolveTeslaClientId } from '../tesla-client-id';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
+// const API_BASE = 'https://even.thedevcave.xyz';
 const REDIRECT_URI = `${API_BASE}/auth/callback`;
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
