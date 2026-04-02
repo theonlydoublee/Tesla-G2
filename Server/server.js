@@ -1,15 +1,21 @@
 /**
- * Tesla OAuth token exchange API.
- * Exchanges authorization code for access and refresh tokens.
- * Run from Docker/: npm start  (after npm run build from project root)
+ * Tesla OAuth token exchange API and Fleet proxy.
+ * Sessions: UUID on client (Authorization Bearer), tokens in SQLite on server.
  */
 
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import cron from 'node-cron';
 import { Agent } from 'undici';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import {
+  insertSession,
+  deleteSession,
+  getAccessTokenForSession,
+  refreshAllSessionsScheduled,
+} from './tesla-sessions.js';
 
 /** Dispatcher that accepts self-signed certs (for Tesla Command Proxy on localhost). */
 const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
@@ -33,7 +39,7 @@ const corsOrigins = [...new Set([ALLOWED_ORIGIN, ...ALLOWED_ORIGINS_EXTRA])];
 const CORS_ALLOW_ALL =
   ALLOWED_ORIGIN === '*' ||
   ALLOWED_ORIGINS_EXTRA.includes('*') ||
-  corsOrigins.length === 1 && corsOrigins[0] === '*';
+  (corsOrigins.length === 1 && corsOrigins[0] === '*');
 
 app.use(
   cors({
@@ -57,6 +63,33 @@ app.use((req, res, next) => {
 
 // Serve static files (Vite build) - dist/ is in project root
 app.use(express.static(DIST_PATH));
+
+function parseBearerSessionId(req) {
+  const raw = req.headers.authorization;
+  if (!raw?.startsWith('Bearer ')) return null;
+  const id = raw.slice(7).trim();
+  return id || null;
+}
+
+async function resolveTeslaAuthorization(req, res) {
+  const sessionId = parseBearerSessionId(req);
+  if (!sessionId) {
+    res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    return null;
+  }
+  try {
+    const access = await getAccessTokenForSession(sessionId);
+    return `Bearer ${access}`;
+  } catch (e) {
+    const status =
+      e.status === 401 || e.code === 'INVALID_SESSION' ? 401 : e.status === 500 ? 500 : 502;
+    res.status(status).json({
+      error: e.message || 'Session error',
+      error_description: e.teslaBody?.error_description,
+    });
+    return null;
+  }
+}
 
 // Public config (client_id is not secret)
 app.get('/api/tesla/config', (req, res) => {
@@ -104,69 +137,34 @@ app.post('/api/tesla/exchange-token', async (req, res) => {
       });
     }
 
-    return res.json({
+    const session_id = insertSession({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       expires_in: data.expires_in,
     });
+
+    return res.json({ session_id });
   } catch (err) {
     console.error('Token exchange error:', err);
     return res.status(500).json({ error: 'Token exchange failed' });
   }
 });
 
-app.post('/api/tesla/refresh-token', async (req, res) => {
-  const { refresh_token } = req.body;
-  const clientId = process.env.TESLA_CLIENT_ID;
-
-  if (!refresh_token || !clientId) {
-    return res.status(400).json({
-      error: 'Missing required fields',
-      required: ['refresh_token'],
-      hint: !clientId ? 'Configure TESLA_CLIENT_ID' : undefined,
-    });
+app.delete('/api/tesla/session', (req, res) => {
+  const sessionId = parseBearerSessionId(req);
+  if (!sessionId) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
   }
-
-  try {
-    const response = await fetch(TESLA_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        client_id: clientId,
-        refresh_token,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      const status = response.status === 401 ? 401 : response.status;
-      return res.status(status).json({
-        error: data.error || 'Token refresh failed',
-        error_description: data.error_description,
-      });
-    }
-
-    return res.json({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_in: data.expires_in,
-    });
-  } catch (err) {
-    console.error('Token refresh error:', err);
-    return res.status(500).json({ error: 'Token refresh failed' });
-  }
+  deleteSession(sessionId);
+  return res.status(204).end();
 });
 
 const FLEET_API_BASE = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
 
 // Proxy Fleet API requests (avoids CORS - Tesla blocks browser direct calls)
 app.get('/api/tesla/vehicles', async (req, res) => {
-  const auth = req.headers.authorization;
-  if (!auth) {
-    return res.status(401).json({ error: 'Missing Authorization header' });
-  }
+  const auth = await resolveTeslaAuthorization(req, res);
+  if (!auth) return;
   try {
     const response = await fetch(`${FLEET_API_BASE}/api/1/vehicles`, {
       headers: { Authorization: auth },
@@ -180,11 +178,9 @@ app.get('/api/tesla/vehicles', async (req, res) => {
 });
 
 app.get('/api/tesla/vehicle_data/:vin', async (req, res) => {
-  const auth = req.headers.authorization;
+  const auth = await resolveTeslaAuthorization(req, res);
+  if (!auth) return;
   const { vin } = req.params;
-  if (!auth) {
-    return res.status(401).json({ error: 'Missing Authorization header' });
-  }
   if (!vin) {
     return res.status(400).json({ error: 'Missing VIN' });
   }
@@ -205,11 +201,9 @@ const TESLA_COMMAND_PROXY_URL = process.env.TESLA_COMMAND_PROXY_URL?.replace(/\/
 // Check if virtual key is paired (for hiding the "add virtual key" note).
 // Sends a harmless door_lock; 200 = key works, 403 = key not added.
 app.get('/api/tesla/check-virtual-key', async (req, res) => {
-  const auth = req.headers.authorization;
+  const auth = await resolveTeslaAuthorization(req, res);
+  if (!auth) return;
   const { vehicleId, vin } = req.query;
-  if (!auth) {
-    return res.status(401).json({ error: 'Missing Authorization header' });
-  }
   const vid = vehicleId || vin;
   if (!vid) {
     return res.status(400).json({ error: 'Missing vehicleId or vin' });
@@ -240,8 +234,6 @@ app.get('/api/tesla/check-virtual-key', async (req, res) => {
 });
 
 // Tesla Fleet API command proxy - vehicle commands (lock, unlock, frunk, etc.)
-// Tesla requires commands to be signed via Vehicle Command Proxy for most vehicles.
-// Set TESLA_COMMAND_PROXY_URL to route commands through tesla-http-proxy instead of Fleet API directly.
 const ALLOWED_COMMANDS = new Set([
   'door_lock',
   'door_unlock',
@@ -255,13 +247,11 @@ const ALLOWED_COMMANDS = new Set([
 ]);
 
 app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
-  const auth = req.headers.authorization;
+  const auth = await resolveTeslaAuthorization(req, res);
+  if (!auth) return;
   const { vehicleId, command } = req.params;
   const body = req.body;
   const vin = req.body?.vin;
-  if (!auth) {
-    return res.status(401).json({ error: 'Missing Authorization header' });
-  }
   if (!vehicleId || !command) {
     return res.status(400).json({ error: 'Missing vehicleId or command' });
   }
@@ -304,6 +294,16 @@ app.get('*', (req, res) => {
   }
 });
 
+const cronOptions = process.env.TZ ? { timezone: process.env.TZ } : {};
+cron.schedule(
+  '0 3 * * *',
+  () => {
+    refreshAllSessionsScheduled().catch((err) => console.error('[tesla-sessions] Cron:', err));
+  },
+  cronOptions,
+);
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Tesla auth API listening on port ${PORT}`);
+  console.log('[tesla-sessions] Daily session refresh scheduled at 03:00 (server local time, or TZ if set)');
 });

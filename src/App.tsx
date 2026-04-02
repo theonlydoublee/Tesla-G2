@@ -1,5 +1,5 @@
 /**
- * Tesla – Even G2 app root. Manages bridge, tokens, and glasses flow.
+ * Tesla – Even G2 app root. Manages bridge, session id, and glasses flow.
  */
 
 import { useState, useEffect } from 'react';
@@ -9,22 +9,23 @@ import {
   startGlassesApp,
   startGlassesCredentialsMessage,
 } from './glasses-app';
-import { setTokenDisplay } from './pages/main';
+import { markSessionConnected } from './pages/main';
 import { SignInView } from './components/SignInView';
 import { DashboardView } from './components/DashboardView';
 import { AuthCallbackView } from './components/AuthCallbackView';
-import { apiUrl } from './api-base';
+import { STORAGE_KEY_SESSION_ID } from './tesla-session-storage';
 import './App.css';
 
-const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
-const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
-const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';
-const TOKEN_STALE_DAYS = 80;
-const STALE_MS = TOKEN_STALE_DAYS * 24 * 60 * 60 * 1000;
+const LEGACY_KEYS = ['tesla_access_token', 'tesla_refresh_token', 'tesla_token_refreshed_at'] as const;
 
-function isTokenStale(refreshedAt: string | null): boolean {
-  if (!refreshedAt) return false;
-  return Date.now() - new Date(refreshedAt).getTime() > STALE_MS;
+async function clearLegacyTokenKeys(b: EvenAppBridge) {
+  for (const key of LEGACY_KEYS) {
+    try {
+      await b.setLocalStorage(key, '');
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function isAuthCallback(): boolean {
@@ -35,9 +36,7 @@ function isAuthCallback(): boolean {
 
 export function App() {
   const [bridge, setBridge] = useState<EvenAppBridge | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState<string | null>(null);
-  const [tokenRefreshedAt, setTokenRefreshedAt] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [needsReauth, setNeedsReauth] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -52,49 +51,17 @@ export function App() {
     waitForEvenAppBridge()
       .then(async (b) => {
         setBridge(b);
-        const access = await b.getLocalStorage(STORAGE_KEY_ACCESS_TOKEN);
-        const refresh = await b.getLocalStorage(STORAGE_KEY_REFRESH_TOKEN);
-        let refreshedAt = await b.getLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT);
-        const hasTokens = access && refresh;
+        const session = await b.getLocalStorage(STORAGE_KEY_SESSION_ID);
+        const hasSession = !!session?.trim();
 
-        if (hasTokens && !refreshedAt) {
-          refreshedAt = new Date().toISOString();
-          await b.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, refreshedAt);
-        }
-        setAccessToken(access ?? null);
-        setRefreshToken(refresh ?? null);
-        setTokenRefreshedAt(refreshedAt ?? null);
-
-        if (!hasTokens) {
-          await startGlassesCredentialsMessage(b);
-        } else {
-          setTokenDisplay(access, refresh);
+        if (hasSession) {
+          await clearLegacyTokenKeys(b);
+          setSessionId(session!.trim());
+          markSessionConnected();
           await startGlassesApp(b);
-
-          if (isTokenStale(refreshedAt ?? null)) {
-            try {
-              const res = await fetch(apiUrl('/api/tesla/refresh-token'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refresh }),
-              });
-              const data = await res.json();
-              if (res.ok && data.access_token && data.refresh_token) {
-                const now = new Date().toISOString();
-                await b.setLocalStorage(STORAGE_KEY_ACCESS_TOKEN, data.access_token);
-                await b.setLocalStorage(STORAGE_KEY_REFRESH_TOKEN, data.refresh_token);
-                await b.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, now);
-                setAccessToken(data.access_token);
-                setRefreshToken(data.refresh_token);
-                setTokenRefreshedAt(now);
-                setTokenDisplay(data.access_token, data.refresh_token);
-              } else {
-                setNeedsReauth(true);
-              }
-            } catch {
-              setNeedsReauth(true);
-            }
-          }
+        } else {
+          await clearLegacyTokenKeys(b);
+          await startGlassesCredentialsMessage(b);
         }
         setInitialized(true);
       })
@@ -104,19 +71,6 @@ export function App() {
         setInitialized(true);
       });
   }, []);
-
-  async function handleTokensRefreshed(access: string, refresh: string) {
-    if (!bridge) return;
-    const now = new Date().toISOString();
-    await bridge.setLocalStorage(STORAGE_KEY_ACCESS_TOKEN, access);
-    await bridge.setLocalStorage(STORAGE_KEY_REFRESH_TOKEN, refresh);
-    await bridge.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, now);
-    setTokenDisplay(access, refresh);
-    setAccessToken(access);
-    setRefreshToken(refresh);
-    setTokenRefreshedAt(now);
-    setNeedsReauth(false);
-  }
 
   if (isAuthCallback()) {
     return (
@@ -153,7 +107,7 @@ export function App() {
     );
   }
 
-  if (!accessToken || !refreshToken) {
+  if (!sessionId) {
     return (
       <div className="app-container">
         <SignInView bridge={bridge} />
@@ -165,12 +119,9 @@ export function App() {
     <div className="app-container">
       <DashboardView
         bridge={bridge}
-        accessToken={accessToken}
-        refreshToken={refreshToken}
-        tokenRefreshedAt={tokenRefreshedAt}
+        sessionId={sessionId}
         needsReauth={needsReauth}
-        onTokensRefreshed={handleTokensRefreshed}
-        onRefreshFailed={() => setNeedsReauth(true)}
+        onSessionInvalid={() => setNeedsReauth(true)}
       />
     </div>
   );

@@ -16,6 +16,7 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 import { apiUrl } from './api-base';
+import { STORAGE_KEY_SESSION_ID } from './tesla-session-storage';
 import {
   setupGlassesEventHandler,
   isClickEvent,
@@ -56,7 +57,6 @@ function clipTextForCreatePage(s: string): string {
   return `${s.slice(0, MAX_TEXT_CHARS_CREATE - 2)}\n…`;
 }
 
-const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
@@ -79,8 +79,9 @@ function decodeModelFromVin(vin: string): string {
  * Falls back to placeholder if no token, no vehicle, or API error.
  */
 async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> {
-  const accessToken = await bridge.getLocalStorage(STORAGE_KEY_ACCESS_TOKEN);
-  if (!accessToken) return FALLBACK_TEXT;
+  const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
+  if (!sessionId?.trim()) return FALLBACK_TEXT;
+  const auth = `Bearer ${sessionId.trim()}`;
 
   let vin: string | null = null;
   let storedDisplayName: string | null = null;
@@ -98,7 +99,7 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
   if (!vin) {
     try {
       const res = await fetch(apiUrl('/api/tesla/vehicles'), {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: auth },
       });
       const data = await res.json();
       const list = (data?.response ?? []) as Array<{ id?: number; vin?: string; display_name?: string }>;
@@ -122,7 +123,7 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
 
   try {
     const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: auth },
     });
     const data = await res.json();
     if (!res.ok) return FALLBACK_TEXT;
@@ -230,9 +231,10 @@ export function buildContainerRebuildPage(textContent: string) {
  * Execute Tesla command for the given control index.
  */
 async function executeControlCommand(bridge: EvenAppBridge, index: number): Promise<void> {
-  const accessToken = await bridge.getLocalStorage(STORAGE_KEY_ACCESS_TOKEN);
+  const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
   const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
-  if (!accessToken || !stored) return;
+  if (!sessionId?.trim() || !stored) return;
+  const auth = `Bearer ${sessionId.trim()}`;
 
   let vehicleId: string | number | null = null;
   let vin: string | null = null;
@@ -246,7 +248,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
 
   if (vehicleId == null && vin) {
     const res = await fetch(apiUrl('/api/tesla/vehicles'), {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: auth },
     });
     const data = await res.json();
     const list = (data?.response ?? []) as Array<{ id?: number; vin?: string }>;
@@ -273,7 +275,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   if (index === CHARGE_ACTION_INDEX) {
     try {
       const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: auth },
       });
       const vData = await vRes.json();
       const chargeState = vData?.response?.charge_state ?? vData?.charge_state;
@@ -292,7 +294,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: auth,
         'Content-Type': 'application/json',
       },
       body: reqBody ? JSON.stringify(reqBody) : undefined,
@@ -332,7 +334,7 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
 }
 
 /**
- * Switch from credentials page to container main page. Call after tokens saved.
+ * Switch from credentials page to container main page. Call after session is saved.
  */
 export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
   await refreshGlassesMainPageUi(bridge);
@@ -364,7 +366,7 @@ function buildCredentialsMessagePage() {
 }
 
 /**
- * Start the glasses app (container main page and event handling). Call when tokens exist.
+ * Start the glasses app (container main page and event handling). Call when session id exists.
  */
 export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
   const textContent = await fetchLivePageTextContent(bridge);
@@ -381,7 +383,7 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
 
 /**
  * Show credentials-needed message on glasses and minimal handler (double-tap to exit).
- * Call when tokens are missing so the glasses display starts up.
+ * Call when session is missing so the glasses display starts up.
  */
 export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Promise<void> {
   const result = await bridge.createStartUpPageContainer(

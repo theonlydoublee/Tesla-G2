@@ -13,7 +13,6 @@ export interface MainPageData {
     speedMph: number;
     powerKw: number;
   } | null;
-  tokenDisplay: { access: string; refresh: string };
 }
 
 export interface PageData {
@@ -114,7 +113,7 @@ export function buildTextContentFromVehicleData(
   return lines.join('\n');
 }
 
-/** Stub for App token display. Kept for compatibility. */
-export function setTokenDisplay(_access: string, _refresh: string): void {
-  // No-op: tokens are used for API calls, not displayed on main page.
+/** Called when a Tesla server session is active (OAuth tokens stay on server). */
+export function markSessionConnected(): void {
+  // No-op: session is not displayed on glasses UI.
 }

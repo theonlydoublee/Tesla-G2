@@ -7,13 +7,21 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { apiUrl } from '../api-base';
+import { STORAGE_KEY_SESSION_ID } from '../tesla-session-storage';
 
 const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
-// const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
 
-const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
-const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
-const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';
+const LEGACY_KEYS = ['tesla_access_token', 'tesla_refresh_token', 'tesla_token_refreshed_at'] as const;
+
+async function clearLegacyTokenKeys(bridge: Awaited<ReturnType<typeof waitForEvenAppBridge>>) {
+  for (const key of LEGACY_KEYS) {
+    try {
+      await bridge.setLocalStorage(key, '');
+    } catch {
+      // ignore
+    }
+  }
+}
 
 export function AuthCallbackView() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -46,11 +54,10 @@ export function AuthCallbackView() {
     })
       .then((r) => r.json())
       .then(async (data) => {
-        if (data.access_token && data.refresh_token) {
+        if (data.session_id) {
           const bridge = await waitForEvenAppBridge();
-          await bridge.setLocalStorage(STORAGE_KEY_ACCESS_TOKEN, data.access_token);
-          await bridge.setLocalStorage(STORAGE_KEY_REFRESH_TOKEN, data.refresh_token);
-          await bridge.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, new Date().toISOString());
+          await clearLegacyTokenKeys(bridge);
+          await bridge.setLocalStorage(STORAGE_KEY_SESSION_ID, data.session_id);
           setStatus('success');
           window.location.replace('/');
         } else {

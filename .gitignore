@@ -164,3 +164,7 @@ Software Design Guidelines/
 *.ehpk
 .env.production
 *.production
+
+# Tesla OAuth session database (local / VPS)
+Server/tesla-sessions.sqlite
+Server/*.sqlite

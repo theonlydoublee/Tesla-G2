@@ -1,5 +1,5 @@
 /**
- * Dashboard view when Tesla tokens exist.
+ * Dashboard view when a server Tesla session exists (session UUID on device).
  * Test API access, vehicle selection, and re-authorize options.
  */
 
@@ -9,6 +9,7 @@ import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { switchToMainPage } from '../glasses-app';
 import { apiUrl } from '../api-base';
 import { resolveTeslaClientId } from '../tesla-client-id';
+import { STORAGE_KEY_SESSION_ID } from '../tesla-session-storage';
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
 // const API_BASE = 'https://even.thedevcave.xyz';
@@ -16,12 +17,7 @@ const REDIRECT_URI = `${API_BASE}/auth/callback`;
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 
-const STORAGE_KEY_ACCESS_TOKEN = 'tesla_access_token';
-const STORAGE_KEY_REFRESH_TOKEN = 'tesla_refresh_token';
-const STORAGE_KEY_TOKEN_REFRESHED_AT = 'tesla_token_refreshed_at';
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
-const TOKEN_STALE_DAYS = 80;
-const STALE_MS = TOKEN_STALE_DAYS * 24 * 60 * 60 * 1000;
 
 interface TeslaVehicle {
   id?: number;
@@ -35,11 +31,6 @@ interface SelectedVehicle {
   vin: string;
   name: string;
   model: string;
-}
-
-function isTokenStale(refreshedAt: string | null | undefined): boolean {
-  if (!refreshedAt) return false;
-  return Date.now() - new Date(refreshedAt).getTime() > STALE_MS;
 }
 
 function decodeModelFromVin(vin: string): string {
@@ -57,13 +48,9 @@ function decodeModelFromVin(vin: string): string {
 
 export interface DashboardViewProps {
   bridge: EvenAppBridge;
-  accessToken: string;
-  refreshToken: string;
-  tokenRefreshedAt?: string | null;
+  sessionId: string;
   needsReauth?: boolean;
-  onTokensRefreshed?: (access: string, refresh: string) => void | Promise<void>;
-  onRefreshFailed?: () => void;
-  onReAuthorize?: () => void;
+  onSessionInvalid?: () => void;
 }
 
 function generateState(): string {
@@ -75,12 +62,9 @@ function generateState(): string {
 
 export function DashboardView({
   bridge,
-  accessToken,
-  refreshToken,
-  tokenRefreshedAt,
+  sessionId,
   needsReauth,
-  onTokensRefreshed,
-  onRefreshFailed,
+  onSessionInvalid,
 }: DashboardViewProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState<string>('');
@@ -92,41 +76,23 @@ export function DashboardView({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [virtualKeyAdded, setVirtualKeyAdded] = useState<boolean | null>(null);
 
-  async function getValidToken(): Promise<string | null> {
-    if (needsReauth) return null;
-    let tokenToUse = accessToken;
-    if (isTokenStale(tokenRefreshedAt)) {
-      try {
-        const res = await fetch(apiUrl('/api/tesla/refresh-token'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-        const data = await res.json();
-        if (res.ok && data.access_token && data.refresh_token) {
-          tokenToUse = data.access_token;
-          await onTokensRefreshed?.(data.access_token, data.refresh_token);
-        } else {
-          onRefreshFailed?.();
-          return null;
-        }
-      } catch {
-        onRefreshFailed?.();
-        return null;
-      }
-    }
-    return tokenToUse;
+  function authHeader(): string {
+    return `Bearer ${sessionId}`;
+  }
+
+  function noteUnauthorized(res: Response) {
+    if (res.status === 401) onSessionInvalid?.();
   }
 
   async function fetchVehicles() {
-    const tokenToUse = await getValidToken();
-    if (!tokenToUse) return;
+    if (needsReauth || !sessionId) return;
     setVehiclesLoading(true);
     setVehiclesError(null);
     try {
       const res = await fetch(apiUrl('/api/tesla/vehicles'), {
-        headers: { Authorization: `Bearer ${tokenToUse}` },
+        headers: { Authorization: authHeader() },
       });
+      noteUnauthorized(res);
       const data = await res.json();
       if (res.ok) {
         const raw = (data?.response ?? []) as Array<{ id?: number; vin?: string; display_name?: string }>;
@@ -152,7 +118,7 @@ export function DashboardView({
   }
 
   useEffect(() => {
-    if (!accessToken || needsReauth) return;
+    if (!sessionId || needsReauth) return;
     let cancelled = false;
     (async () => {
       const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
@@ -172,14 +138,13 @@ export function DashboardView({
           // ignore invalid stored data
         }
       }
-      const tokenToUse = await getValidToken();
-      if (cancelled || !tokenToUse) return;
       setVehiclesLoading(true);
       setVehiclesError(null);
       try {
         const res = await fetch(apiUrl('/api/tesla/vehicles'), {
-          headers: { Authorization: `Bearer ${tokenToUse}` },
+          headers: { Authorization: authHeader() },
         });
+        noteUnauthorized(res);
         const data = await res.json();
         if (cancelled) return;
         if (res.ok) {
@@ -219,7 +184,7 @@ export function DashboardView({
       }
     })();
     return () => { cancelled = true; };
-  }, [accessToken, needsReauth, bridge]);
+  }, [sessionId, needsReauth, bridge]);
 
   useEffect(() => {
     if (!selectedVehicle || needsReauth) {
@@ -229,15 +194,15 @@ export function DashboardView({
     let cancelled = false;
     (async () => {
       setVirtualKeyAdded(null);
-      const tokenToUse = await getValidToken();
-      if (cancelled || !tokenToUse) return;
+      if (!sessionId) return;
       try {
         const params = new URLSearchParams();
         if (selectedVehicle.id != null) params.set('vehicleId', String(selectedVehicle.id));
         if (selectedVehicle.vin) params.set('vin', selectedVehicle.vin);
         const res = await fetch(apiUrl(`/api/tesla/check-virtual-key?${params}`), {
-          headers: { Authorization: `Bearer ${tokenToUse}` },
+          headers: { Authorization: authHeader() },
         });
+        noteUnauthorized(res);
         const data = await res.json();
         if (!cancelled) setVirtualKeyAdded(data.virtualKeyAdded === true);
       } catch {
@@ -245,7 +210,7 @@ export function DashboardView({
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedVehicle?.id, selectedVehicle?.vin, needsReauth]);
+  }, [selectedVehicle?.id, selectedVehicle?.vin, needsReauth, sessionId]);
 
   async function handleSelectVehicle(vehicle: TeslaVehicle) {
     const selected: SelectedVehicle = {
@@ -272,18 +237,14 @@ export function DashboardView({
   }
 
   async function handleTestApi() {
-    if (needsReauth) return;
+    if (needsReauth || !sessionId) return;
     setTestStatus('loading');
     setTestMessage('');
-    const tokenToUse = await getValidToken();
-    if (!tokenToUse) {
-      setTestStatus('idle');
-      return;
-    }
     try {
       const res = await fetch(apiUrl('/api/tesla/vehicles'), {
-        headers: { Authorization: `Bearer ${tokenToUse}` },
+        headers: { Authorization: authHeader() },
       });
+      noteUnauthorized(res);
       const data = await res.json();
       if (res.ok) {
         const count = data?.response?.length ?? 0;
@@ -304,9 +265,22 @@ export function DashboardView({
   async function startReAuth() {
     setReAuthError(null);
     try {
-      await bridge.setLocalStorage(STORAGE_KEY_ACCESS_TOKEN, '');
-      await bridge.setLocalStorage(STORAGE_KEY_REFRESH_TOKEN, '');
-      await bridge.setLocalStorage(STORAGE_KEY_TOKEN_REFRESHED_AT, '');
+      await fetch(apiUrl('/api/tesla/session'), {
+        method: 'DELETE',
+        headers: { Authorization: authHeader() },
+      });
+    } catch {
+      // ignore network errors; still clear local session
+    }
+    try {
+      await bridge.setLocalStorage(STORAGE_KEY_SESSION_ID, '');
+    } catch {
+      // ignore
+    }
+    try {
+      await bridge.setLocalStorage('tesla_access_token', '');
+      await bridge.setLocalStorage('tesla_refresh_token', '');
+      await bridge.setLocalStorage('tesla_token_refreshed_at', '');
     } catch {
       // ignore
     }
