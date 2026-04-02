@@ -8,8 +8,7 @@ import { Card, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { apiUrl } from '../api-base';
 import { STORAGE_KEY_SESSION_ID } from '../tesla-session-storage';
-
-const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
+import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 
 const LEGACY_KEYS = ['tesla_access_token', 'tesla_refresh_token', 'tesla_token_refreshed_at'] as const;
 
@@ -50,7 +49,7 @@ export function AuthCallbackView() {
     fetch(apiUrl('/api/tesla/exchange-token'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, redirect_uri: REDIRECT_URI }),
+      body: JSON.stringify({ code, redirect_uri: getTeslaRedirectUri() }),
     })
       .then((r) => r.json())
       .then(async (data) => {

@@ -7,9 +7,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { resolveTeslaClientId } from '../tesla-client-id';
-
-const REDIRECT_URI = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'https://even.thedevcave.xyz/auth/callback';
-// const REDIRECT_URI = 'https://even.thedevcave.xyz/auth/callback';
+import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 
@@ -62,7 +60,7 @@ export function SignInView({ bridge }: SignInViewProps) {
 
     const params = new URLSearchParams({
       client_id: clientId,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: getTeslaRedirectUri(),
       response_type: 'code',
       scope: SCOPES,
       state,

@@ -10,10 +10,7 @@ import { switchToMainPage } from '../glasses-app';
 import { apiUrl } from '../api-base';
 import { resolveTeslaClientId } from '../tesla-client-id';
 import { STORAGE_KEY_SESSION_ID } from '../tesla-session-storage';
-
-const API_BASE = typeof window !== 'undefined' ? window.location.origin : 'https://even.thedevcave.xyz';
-// const API_BASE = 'https://even.thedevcave.xyz';
-const REDIRECT_URI = `${API_BASE}/auth/callback`;
+import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 
@@ -294,7 +291,7 @@ export function DashboardView({
     sessionStorage.setItem('tesla_oauth_state', state);
     const params = new URLSearchParams({
       client_id: cid,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: getTeslaRedirectUri(),
       response_type: 'code',
       scope: SCOPES,
       state,
