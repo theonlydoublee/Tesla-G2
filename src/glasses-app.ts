@@ -49,11 +49,18 @@ const CMD_LIST_NAME = 'tesla-cmd-list';
 const MAIN_TEXT_ID = 2;
 const MAIN_TEXT_NAME = 'main-text';
 
-/** Confirm step: separate IDs from main list/text. */
-const CONFIRM_LIST_ID = 11;
-const CONFIRM_LIST_NAME = 'tesla-confirm-list';
-const CONFIRM_TEXT_ID = 12;
-const CONFIRM_TEXT_NAME = 'tesla-confirm-text';
+/**
+ * Confirm step: own container IDs/names (never reuse main CMD/MAIN ids).
+ * Names ≤16 chars per Display guide.
+ */
+const CONFIRM_HDR_ID = 20;
+const CONFIRM_HDR_NAME = 'tesla-cfm-hdr';
+const CONFIRM_LIST_ID = 21;
+const CONFIRM_LIST_NAME = 'tesla-cfm-lst';
+
+/** Centered list band; 576-wide canvas. */
+const CONFIRM_LIST_WIDTH = 320;
+const CONFIRM_HEADER_HEIGHT = 72;
 
 /** Row 0 absorbs host quirk (empty index/name); no-op. Rows 1–2 are Confirm / Cancel. */
 const CONFIRM_ITEM_NAMES = ['Select Below:', 'Confirm', 'Cancel'] as const;
@@ -226,19 +233,42 @@ function buildContainerMainPageConfig(textContent: string) {
   };
 }
 
+/**
+ * Confirm UI: top summary line + list centered horizontally (not the main left list / right text split).
+ * @see https://hub.evenrealities.com/docs/guides/display
+ */
 function buildConfirmPageConfig(actionIndex: number) {
   const action = CONTROL_ACTIONS[actionIndex];
   const label = action?.glassesListLabel ?? 'Action';
-  const clipped = clipTextForCreatePage(`Run:\n${label}?`);
+  const headerContent = clipTextForCreatePage(`Run:\n${label}?`);
 
-  const listContainer = new ListContainerProperty({
+  const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
+  const listY = CONFIRM_HEADER_HEIGHT;
+  const listHeight = CANVAS_HEIGHT - CONFIRM_HEADER_HEIGHT;
+
+  const headerText = new TextContainerProperty({
     xPosition: 0,
     yPosition: 0,
-    width: 192,
-    height: 288,
-    borderWidth: 2,
+    width: CANVAS_WIDTH,
+    height: CONFIRM_HEADER_HEIGHT,
+    borderWidth: 0,
     borderColor: 5,
     borderRadius: 0,
+    paddingLength: 8,
+    containerID: CONFIRM_HDR_ID,
+    containerName: CONFIRM_HDR_NAME,
+    content: headerContent,
+    isEventCapture: 0,
+  });
+
+  const listContainer = new ListContainerProperty({
+    xPosition: listX,
+    yPosition: listY,
+    width: CONFIRM_LIST_WIDTH,
+    height: listHeight,
+    borderWidth: 2,
+    borderColor: 5,
+    borderRadius: 6,
     paddingLength: 0,
     containerID: CONFIRM_LIST_ID,
     containerName: CONFIRM_LIST_NAME,
@@ -249,25 +279,10 @@ function buildConfirmPageConfig(actionIndex: number) {
     }),
   });
 
-  const textContainer = new TextContainerProperty({
-    xPosition: 242,
-    yPosition: 0,
-    width: 334,
-    height: 288,
-    borderWidth: 0,
-    borderColor: 5,
-    borderRadius: 6,
-    paddingLength: 12,
-    containerID: CONFIRM_TEXT_ID,
-    containerName: CONFIRM_TEXT_NAME,
-    content: clipped,
-    isEventCapture: 0,
-  });
-
   return {
     containerTotalNum: 2,
     listObject: [listContainer],
-    textObject: [textContainer],
+    textObject: [headerText],
   };
 }
 
@@ -442,11 +457,21 @@ async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
   await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
 }
 
+/**
+ * Show confirm as a fresh startup-style page when the host allows it; otherwise rebuild.
+ * SDK: createStartUpPageContainer at launch; confirm uses the same path so firmware treats it as a new page, not an in-place list swap.
+ */
 async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number): Promise<void> {
   glassesMainUiMode = { type: 'confirm', actionIndex };
-  await bridge.rebuildPageContainer(
-    new RebuildPageContainer(buildConfirmPageConfig(actionIndex)),
+  const page = buildConfirmPageConfig(actionIndex);
+  const createResult = await bridge.createStartUpPageContainer(
+    new CreateStartUpPageContainer(page),
   );
+  const created = StartUpPageCreateResult.normalize(createResult);
+  if (created !== StartUpPageCreateResult.success) {
+    console.warn('[Tesla] confirm createStartUpPageContainer failed, using rebuild:', createResult, created);
+    await bridge.rebuildPageContainer(new RebuildPageContainer(page));
+  }
 }
 
 /**
