@@ -87,6 +87,9 @@ type GlassesMainUiMode =
 
 let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
 
+/** Prior subscription from setupGlassesEventHandler — must clear before adding another (Hub stacks callbacks). */
+let glassesHubUnsubscribe: (() => void) | null = null;
+
 function resetGlassesMainUiMode(): void {
   glassesMainUiMode = { type: 'main' };
 }
@@ -446,10 +449,17 @@ async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number):
   );
 }
 
-/** Input & Events guide: listEvent / textEvent / double-click / lifecycle. */
+/**
+ * Input & Events: list capture → listEvent; lifecycle → sysEvent.
+ * @see https://hub.evenrealities.com/docs/guides/input-events
+ */
 function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
-  setupGlassesEventHandler(bridge, {
+  glassesHubUnsubscribe?.();
+  glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
     onForegroundEnter: () => {
+      // Refresh main list when returning to the app, but do not cancel an in-progress confirm sheet
+      // (some hosts emit lifecycle noise around list taps).
+      if (glassesMainUiMode.type === 'confirm') return;
       resetGlassesMainUiMode();
       void refreshGlassesMainPageUi(bridge);
     },
@@ -550,5 +560,6 @@ export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Pro
     return;
   }
 
-  setupGlassesEventHandler(bridge);
+  glassesHubUnsubscribe?.();
+  glassesHubUnsubscribe = setupGlassesEventHandler(bridge);
 }

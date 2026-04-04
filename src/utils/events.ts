@@ -11,7 +11,7 @@ import { OsEventTypeList } from '@evenrealities/even_hub_sdk';
 
 /** Parsed payload from an EvenHub glasses-oriented event. */
 export interface GlassesEventPayload {
-  eventType: number | undefined;
+  eventType: number | string | undefined | null;
   listEvent: EvenHubEvent['listEvent'];
   textEvent: EvenHubEvent['textEvent'];
   sysEvent: EvenHubEvent['sysEvent'];
@@ -48,28 +48,52 @@ export function isClickEvent(eventType: number | string | undefined | null): boo
   return normalized === OsEventTypeList.CLICK_EVENT;
 }
 
-export function isScrollTopEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.SCROLL_TOP_EVENT;
+export function isScrollTopEvent(
+  eventType: number | string | undefined | null,
+): boolean {
+  if (eventType === undefined || eventType === null) return false;
+  if (eventType === OsEventTypeList.SCROLL_TOP_EVENT) return true;
+  return OsEventTypeList.fromJson(eventType) === OsEventTypeList.SCROLL_TOP_EVENT;
 }
 
-export function isScrollBottomEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT;
+export function isScrollBottomEvent(
+  eventType: number | string | undefined | null,
+): boolean {
+  if (eventType === undefined || eventType === null) return false;
+  if (eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) return true;
+  return OsEventTypeList.fromJson(eventType) === OsEventTypeList.SCROLL_BOTTOM_EVENT;
 }
 
-export function isDoubleClickEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.DOUBLE_CLICK_EVENT;
+export function isDoubleClickEvent(
+  eventType: number | string | undefined | null,
+): boolean {
+  if (eventType === undefined || eventType === null) return false;
+  if (eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) return true;
+  return OsEventTypeList.fromJson(eventType) === OsEventTypeList.DOUBLE_CLICK_EVENT;
 }
 
-export function isForegroundEnterEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT;
+export function isForegroundEnterEvent(
+  eventType: number | string | undefined | null,
+): boolean {
+  if (eventType === undefined || eventType === null) return false;
+  if (eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) return true;
+  return OsEventTypeList.fromJson(eventType) === OsEventTypeList.FOREGROUND_ENTER_EVENT;
 }
 
-export function isForegroundExitEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.FOREGROUND_EXIT_EVENT;
+export function isForegroundExitEvent(
+  eventType: number | string | undefined | null,
+): boolean {
+  if (eventType === undefined || eventType === null) return false;
+  if (eventType === OsEventTypeList.FOREGROUND_EXIT_EVENT) return true;
+  return OsEventTypeList.fromJson(eventType) === OsEventTypeList.FOREGROUND_EXIT_EVENT;
 }
 
-export function isAbnormalExitEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.ABNORMAL_EXIT_EVENT;
+export function isAbnormalExitEvent(
+  eventType: number | string | undefined | null,
+): boolean {
+  if (eventType === undefined || eventType === null) return false;
+  if (eventType === OsEventTypeList.ABNORMAL_EXIT_EVENT) return true;
+  return OsEventTypeList.fromJson(eventType) === OsEventTypeList.ABNORMAL_EXIT_EVENT;
 }
 
 export type GlassesEventHandlerOptions = {
@@ -88,11 +112,12 @@ export type GlassesEventHandlerOptions = {
 /**
  * Register onEvenHubEvent after the glasses page is shown.
  * Double-press is handled before onEvent (default exits page container).
+ * @returns Unsubscribe — call before registering a replacement to avoid stacked listeners.
  */
 export function setupGlassesEventHandler(
   bridge: EvenAppBridge,
   options: GlassesEventHandlerOptions = {},
-): void {
+): () => void {
   const {
     onDoubleClick,
     onForegroundEnter,
@@ -101,7 +126,7 @@ export function setupGlassesEventHandler(
     onEvent,
   } = options;
 
-  bridge.onEvenHubEvent((event) => {
+  return bridge.onEvenHubEvent((event) => {
     const payload = parseGlassesEvent(event);
     const { eventType } = payload;
 
