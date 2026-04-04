@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { discoverFleetRegion, normalizeFleetApiBase, DEFAULT_FLEET_API_BASE } from './tesla-region.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TESLA_TOKEN_URL = 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token';
@@ -25,6 +26,19 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 `);
+
+function migrateSessionColumns() {
+  const cols = db.prepare('PRAGMA table_info(tesla_sessions)').all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('region')) {
+    db.exec('ALTER TABLE tesla_sessions ADD COLUMN region TEXT');
+  }
+  if (!names.has('fleet_api_base')) {
+    db.exec('ALTER TABLE tesla_sessions ADD COLUMN fleet_api_base TEXT');
+  }
+}
+
+migrateSessionColumns();
 
 function createQueue() {
   let p = Promise.resolve();
@@ -60,16 +74,24 @@ function updateSessionAfterRefresh(sessionId, access_token, refresh_token, expir
 }
 
 /**
- * @param {{ access_token: string, refresh_token: string, expires_in?: number }} tokens
+ * @param {{
+ *   access_token: string,
+ *   refresh_token: string,
+ *   expires_in?: number,
+ *   region?: string | null,
+ *   fleet_api_base?: string | null,
+ * }} tokens
  * @returns {string} session id (UUID)
  */
 export function insertSession(tokens) {
   const id = randomUUID();
   const now = Date.now();
   const access_expires_at = now + (Number(tokens.expires_in) || 0) * 1000;
+  const region = tokens.region != null ? tokens.region : null;
+  const fleet_api_base = tokens.fleet_api_base != null ? tokens.fleet_api_base : null;
   db.prepare(
-    `INSERT INTO tesla_sessions (id, refresh_token, access_token, access_expires_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tesla_sessions (id, refresh_token, access_token, access_expires_at, created_at, updated_at, region, fleet_api_base)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     tokens.refresh_token,
@@ -77,6 +99,8 @@ export function insertSession(tokens) {
     access_expires_at,
     now,
     now,
+    region,
+    fleet_api_base,
   );
   return id;
 }
@@ -154,6 +178,41 @@ export async function getAccessTokenForSession(sessionId, forceRefresh = false) 
       throw e;
     }
   });
+}
+
+/**
+ * Fleet API origin for this session (per-user region). Lazy backfill for legacy DB rows.
+ * Not run inside getAccessTokenForSession queue to avoid deadlock.
+ *
+ * @param {string} sessionId
+ * @returns {Promise<string>} Normalized https origin without trailing slash
+ */
+export async function getFleetApiBaseForSession(sessionId) {
+  const row = getRow(sessionId);
+  if (!row) {
+    const err = new Error('Invalid or expired session');
+    err.code = 'INVALID_SESSION';
+    err.status = 401;
+    throw err;
+  }
+  if (row.fleet_api_base) {
+    return normalizeFleetApiBase(row.fleet_api_base);
+  }
+
+  const accessToken = await getAccessTokenForSession(sessionId);
+  const discovered = await discoverFleetRegion(accessToken);
+  const base = discovered?.fleet_api_base
+    ? normalizeFleetApiBase(discovered.fleet_api_base)
+    : DEFAULT_FLEET_API_BASE;
+  const region = discovered?.region ?? 'unknown';
+  if (!discovered) {
+    console.warn('[tesla-sessions] Region discovery failed; using NA Fleet base for session', sessionId);
+  }
+  const now = Date.now();
+  db.prepare(
+    `UPDATE tesla_sessions SET region = ?, fleet_api_base = ?, updated_at = ? WHERE id = ?`,
+  ).run(region, base, now, sessionId);
+  return base;
 }
 
 /** Daily job: refresh every stored session (serialized per id). */

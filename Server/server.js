@@ -14,8 +14,10 @@ import {
   insertSession,
   deleteSession,
   getAccessTokenForSession,
+  getFleetApiBaseForSession,
   refreshAllSessionsScheduled,
 } from './tesla-sessions.js';
+import { discoverFleetRegion, normalizeFleetApiBase, DEFAULT_FLEET_API_BASE } from './tesla-region.js';
 
 /** Dispatcher that accepts self-signed certs (for Tesla Command Proxy on localhost). */
 const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
@@ -71,15 +73,17 @@ function parseBearerSessionId(req) {
   return id || null;
 }
 
-async function resolveTeslaAuthorization(req, res) {
+/** Fleet proxy: per-session region base + Bearer token (getFleetApiBase first avoids extra token work when backfilling). */
+async function resolveSessionFleetProxy(req, res) {
   const sessionId = parseBearerSessionId(req);
   if (!sessionId) {
     res.status(401).json({ error: 'Missing or invalid Authorization header' });
     return null;
   }
   try {
+    const fleetBase = await getFleetApiBaseForSession(sessionId);
     const access = await getAccessTokenForSession(sessionId);
-    return `Bearer ${access}`;
+    return { auth: `Bearer ${access}`, fleetBase };
   } catch (e) {
     const status =
       e.status === 401 || e.code === 'INVALID_SESSION' ? 401 : e.status === 500 ? 500 : 502;
@@ -137,13 +141,24 @@ app.post('/api/tesla/exchange-token', async (req, res) => {
       });
     }
 
+    const discovered = await discoverFleetRegion(data.access_token);
+    const region = discovered?.region ?? 'unknown';
+    const fleet_api_base = discovered?.fleet_api_base
+      ? normalizeFleetApiBase(discovered.fleet_api_base)
+      : DEFAULT_FLEET_API_BASE;
+    if (!discovered) {
+      console.warn('[server] Region discovery failed after exchange; using NA Fleet base');
+    }
+
     const session_id = insertSession({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       expires_in: data.expires_in,
+      region,
+      fleet_api_base,
     });
 
-    return res.json({ session_id });
+    return res.json({ session_id, region, fleet_api_base });
   } catch (err) {
     console.error('Token exchange error:', err);
     return res.status(500).json({ error: 'Token exchange failed' });
@@ -159,14 +174,13 @@ app.delete('/api/tesla/session', (req, res) => {
   return res.status(204).end();
 });
 
-const FLEET_API_BASE = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
-
 // Proxy Fleet API requests (avoids CORS - Tesla blocks browser direct calls)
 app.get('/api/tesla/vehicles', async (req, res) => {
-  const auth = await resolveTeslaAuthorization(req, res);
-  if (!auth) return;
+  const ctx = await resolveSessionFleetProxy(req, res);
+  if (!ctx) return;
+  const { auth, fleetBase } = ctx;
   try {
-    const response = await fetch(`${FLEET_API_BASE}/api/1/vehicles`, {
+    const response = await fetch(`${fleetBase}/api/1/vehicles`, {
       headers: { Authorization: auth },
     });
     const data = await response.json();
@@ -178,14 +192,15 @@ app.get('/api/tesla/vehicles', async (req, res) => {
 });
 
 app.get('/api/tesla/vehicle_data/:vin', async (req, res) => {
-  const auth = await resolveTeslaAuthorization(req, res);
-  if (!auth) return;
+  const ctx = await resolveSessionFleetProxy(req, res);
+  if (!ctx) return;
+  const { auth, fleetBase } = ctx;
   const { vin } = req.params;
   if (!vin) {
     return res.status(400).json({ error: 'Missing VIN' });
   }
   try {
-    const response = await fetch(`${FLEET_API_BASE}/api/1/vehicles/${vin}/vehicle_data`, {
+    const response = await fetch(`${fleetBase}/api/1/vehicles/${vin}/vehicle_data`, {
       headers: { Authorization: auth },
     });
     const data = await response.json();
@@ -201,8 +216,9 @@ const TESLA_COMMAND_PROXY_URL = process.env.TESLA_COMMAND_PROXY_URL?.replace(/\/
 // Check if virtual key is paired (for hiding the "add virtual key" note).
 // Sends a harmless door_lock; 200 = key works, 403 = key not added.
 app.get('/api/tesla/check-virtual-key', async (req, res) => {
-  const auth = await resolveTeslaAuthorization(req, res);
-  if (!auth) return;
+  const ctx = await resolveSessionFleetProxy(req, res);
+  if (!ctx) return;
+  const { auth, fleetBase } = ctx;
   const { vehicleId, vin } = req.query;
   const vid = vehicleId || vin;
   if (!vid) {
@@ -222,7 +238,7 @@ app.get('/api/tesla/check-virtual-key', async (req, res) => {
       targetUrl = `${TESLA_COMMAND_PROXY_URL}/api/1/vehicles/${vin}/command/door_lock`;
       fetchOpts.dispatcher = insecureDispatcher;
     } else {
-      targetUrl = `${FLEET_API_BASE}/api/1/vehicles/${vid}/command/door_lock`;
+      targetUrl = `${fleetBase}/api/1/vehicles/${vid}/command/door_lock`;
     }
     const response = await fetch(targetUrl, fetchOpts);
     const virtualKeyAdded = response.status === 200;
@@ -247,8 +263,9 @@ const ALLOWED_COMMANDS = new Set([
 ]);
 
 app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
-  const auth = await resolveTeslaAuthorization(req, res);
-  if (!auth) return;
+  const ctx = await resolveSessionFleetProxy(req, res);
+  if (!ctx) return;
+  const { auth, fleetBase } = ctx;
   const { vehicleId, command } = req.params;
   const body = req.body;
   const vin = req.body?.vin;
@@ -274,7 +291,7 @@ app.post('/api/tesla/command/:vehicleId/:command', async (req, res) => {
       targetUrl = `${TESLA_COMMAND_PROXY_URL}/api/1/vehicles/${vin}/command/${command}`;
       fetchOpts.dispatcher = insecureDispatcher;
     } else {
-      targetUrl = `${FLEET_API_BASE}/api/1/vehicles/${vehicleId}/command/${command}`;
+      targetUrl = `${fleetBase}/api/1/vehicles/${vehicleId}/command/${command}`;
     }
     const response = await fetch(targetUrl, fetchOpts);
     const data = await response.json();

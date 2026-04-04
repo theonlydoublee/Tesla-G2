@@ -49,6 +49,14 @@ const CMD_LIST_NAME = 'tesla-cmd-list';
 const MAIN_TEXT_ID = 2;
 const MAIN_TEXT_NAME = 'main-text';
 
+/** Confirm step: separate IDs from main list/text. */
+const CONFIRM_LIST_ID = 11;
+const CONFIRM_LIST_NAME = 'tesla-confirm-list';
+const CONFIRM_TEXT_ID = 12;
+const CONFIRM_TEXT_NAME = 'tesla-confirm-text';
+
+const CONFIRM_ITEM_NAMES = ['Confirm', 'Cancel'] as const;
+
 /** createStartUpPageContainer / rebuildPageContainer text limit per Even docs */
 const MAX_TEXT_CHARS_CREATE = 1000;
 
@@ -59,7 +67,24 @@ function clipTextForCreatePage(s: string): string {
 
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
 
+/**
+ * Cached right-pane status text for glasses main page. Written only by refreshMainPageTextFromTesla
+ * (startGlassesApp). Rebuilds use getCachedMainPageText — no network. If the user changes the
+ * selected vehicle on the phone, text may stay stale until the glasses app starts again.
+ */
+const STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE = 'tesla_glasses_main_text_cache';
+
 const FALLBACK_TEXT = 'Vehicle data unavailable';
+
+type GlassesMainUiMode =
+  | { type: 'main' }
+  | { type: 'confirm'; actionIndex: number };
+
+let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
+
+function resetGlassesMainUiMode(): void {
+  glassesMainUiMode = { type: 'main' };
+}
 
 function decodeModelFromVin(vin: string): string {
   if (!vin || vin.length < 4) return 'Tesla';
@@ -74,13 +99,15 @@ function decodeModelFromVin(vin: string): string {
   }
 }
 
-/**
- * Fetch live vehicle data and return text content for main page.
- * Falls back to placeholder if no token, no vehicle, or API error.
- */
-async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> {
+/** Persist status text and return it (call from startGlassesApp only). */
+async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<string> {
+  async function finalize(text: string): Promise<string> {
+    await bridge.setLocalStorage(STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE, text);
+    return text;
+  }
+
   const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
-  if (!sessionId?.trim()) return FALLBACK_TEXT;
+  if (!sessionId?.trim()) return finalize(FALLBACK_TEXT);
   const auth = `Bearer ${sessionId.trim()}`;
 
   let vin: string | null = null;
@@ -115,23 +142,32 @@ async function fetchLivePageTextContent(bridge: EvenAppBridge): Promise<string> 
         }));
       }
     } catch {
-      return FALLBACK_TEXT;
+      return finalize(FALLBACK_TEXT);
     }
   }
 
-  if (!vin) return FALLBACK_TEXT;
+  if (!vin) return finalize(FALLBACK_TEXT);
 
   try {
     const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
       headers: { Authorization: auth },
     });
     const data = await res.json();
-    if (!res.ok) return FALLBACK_TEXT;
+    if (!res.ok) return finalize(FALLBACK_TEXT);
     const vehicleData = data?.response ?? data;
-    return buildTextContentFromVehicleData(vehicleData, storedDisplayName);
+    return finalize(buildTextContentFromVehicleData(vehicleData, storedDisplayName));
   } catch {
-    return FALLBACK_TEXT;
+    return finalize(FALLBACK_TEXT);
   }
+}
+
+/** Read cached main-pane text; no API (used for rebuilds). */
+async function getCachedMainPageText(bridge: EvenAppBridge): Promise<string> {
+  const cached = await bridge.getLocalStorage(STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE);
+  if (cached != null && String(cached).trim() !== '') {
+    return String(cached);
+  }
+  return FALLBACK_TEXT;
 }
 
 /**
@@ -182,17 +218,61 @@ function buildContainerMainPageConfig(textContent: string) {
   };
 }
 
+function buildConfirmPageConfig(actionIndex: number) {
+  const action = CONTROL_ACTIONS[actionIndex];
+  const label = action?.glassesListLabel ?? 'Action';
+  const clipped = clipTextForCreatePage(`Run:\n${label}?`);
+
+  const listContainer = new ListContainerProperty({
+    xPosition: 0,
+    yPosition: 0,
+    width: 192,
+    height: 288,
+    borderWidth: 2,
+    borderColor: 5,
+    borderRadius: 0,
+    paddingLength: 0,
+    containerID: CONFIRM_LIST_ID,
+    containerName: CONFIRM_LIST_NAME,
+    isEventCapture: 1,
+    itemContainer: new ListItemContainerProperty({
+      itemCount: CONFIRM_ITEM_NAMES.length,
+      itemName: [...CONFIRM_ITEM_NAMES],
+    }),
+  });
+
+  const textContainer = new TextContainerProperty({
+    xPosition: 242,
+    yPosition: 0,
+    width: 334,
+    height: 288,
+    borderWidth: 0,
+    borderColor: 5,
+    borderRadius: 6,
+    paddingLength: 12,
+    containerID: CONFIRM_TEXT_ID,
+    containerName: CONFIRM_TEXT_NAME,
+    content: clipped,
+    isEventCapture: 0,
+  });
+
+  return {
+    containerTotalNum: 2,
+    listObject: [listContainer],
+    textObject: [textContainer],
+  };
+}
+
 /**
- * Map listEvent to CONTROL_ACTIONS index.
- * G2 quirk (API-Documentation/G2.md): host may omit index (and sometimes name) for row 0 —
- * use `defaultToFirstRowOnEmpty` on click when both are absent.
+ * Map listEvent to row index for main command list.
+ * G2 quirk: host may omit index/name for row 0 — defaultToFirstRowOnEmpty maps empty to row 0 (Lock).
  */
-function resolveListCommandIndex(
+function resolveMainListRowIndex(
   listEvent: object,
   options: { defaultToFirstRowOnEmpty?: boolean } = {},
 ): number | null {
   const names = buildGlassesListItemNames();
-  const n = CONTROL_ACTIONS.length;
+  const n = names.length;
 
   const idx = readNumber(
     listEvent,
@@ -223,12 +303,39 @@ function resolveListCommandIndex(
   return null;
 }
 
+/** Confirm list: only explicit index or name; never default row 0 on empty. */
+function resolveConfirmListRowIndex(listEvent: object): number | null {
+  const names: string[] = [...CONFIRM_ITEM_NAMES];
+  const n = names.length;
+
+  const idx = readNumber(
+    listEvent,
+    'currentSelectItemIndex',
+    'CurrentSelect_ItemIndex',
+  );
+  if (idx !== undefined && Number.isInteger(idx) && idx >= 0 && idx < n) {
+    return idx;
+  }
+
+  const nameRaw = readString(
+    listEvent,
+    'currentSelectItemName',
+    'CurrentSelect_ItemName',
+  );
+  const nameTrimmed = nameRaw != null ? String(nameRaw).trim() : '';
+  if (nameTrimmed.length > 0) {
+    const i = names.indexOf(nameTrimmed);
+    if (i >= 0) return i;
+  }
+  return null;
+}
+
 export function buildContainerRebuildPage(textContent: string) {
   return new RebuildPageContainer(buildContainerMainPageConfig(textContent));
 }
 
 /**
- * Execute Tesla command for the given control index.
+ * Execute Tesla command for the given CONTROL_ACTIONS index (0..7).
  */
 async function executeControlCommand(bridge: EvenAppBridge, index: number): Promise<void> {
   const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
@@ -309,26 +416,53 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   }
 }
 
-/** Rebuild main containers (e.g. after foreground resume or command completion). */
+/** Rebuild main command UI from cache (resets to main layout; no vehicle_data fetch). */
 async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
-  const textContent = await fetchLivePageTextContent(bridge);
+  resetGlassesMainUiMode();
+  const textContent = await getCachedMainPageText(bridge);
   await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
+}
+
+async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number): Promise<void> {
+  glassesMainUiMode = { type: 'confirm', actionIndex };
+  await bridge.rebuildPageContainer(
+    new RebuildPageContainer(buildConfirmPageConfig(actionIndex)),
+  );
 }
 
 /** Input & Events guide: listEvent / textEvent / double-click / lifecycle. */
 function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   setupGlassesEventHandler(bridge, {
     onForegroundEnter: () => {
+      resetGlassesMainUiMode();
       void refreshGlassesMainPageUi(bridge);
     },
     onEvent: (payload) => {
       const et = payload.eventType;
       if (!isClickEvent(et) || payload.listEvent == null) return;
-      const index = resolveListCommandIndex(payload.listEvent, {
+
+      if (glassesMainUiMode.type === 'confirm') {
+        const row = resolveConfirmListRowIndex(payload.listEvent);
+        if (row == null) return;
+        const pending = glassesMainUiMode.actionIndex;
+        if (row === 0) {
+          resetGlassesMainUiMode();
+          void executeControlCommand(bridge, pending);
+          return;
+        }
+        if (row === 1) {
+          resetGlassesMainUiMode();
+          void refreshGlassesMainPageUi(bridge);
+        }
+        return;
+      }
+
+      const row = resolveMainListRowIndex(payload.listEvent, {
         defaultToFirstRowOnEmpty: true,
       });
-      if (index == null) return;
-      void executeControlCommand(bridge, index);
+      if (row == null) return;
+      if (row < 0 || row >= CONTROL_ACTIONS.length) return;
+      void showConfirmForAction(bridge, row);
     },
   });
 }
@@ -369,7 +503,8 @@ function buildCredentialsMessagePage() {
  * Start the glasses app (container main page and event handling). Call when session id exists.
  */
 export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
-  const textContent = await fetchLivePageTextContent(bridge);
+  resetGlassesMainUiMode();
+  const textContent = await refreshMainPageTextFromTesla(bridge);
   const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent));
   const result = await bridge.createStartUpPageContainer(config);
   const created = StartUpPageCreateResult.normalize(result);

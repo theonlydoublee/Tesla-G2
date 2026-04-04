@@ -9,7 +9,11 @@ import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { switchToMainPage } from '../glasses-app';
 import { apiUrl } from '../api-base';
 import { resolveTeslaClientId } from '../tesla-client-id';
-import { STORAGE_KEY_SESSION_ID } from '../tesla-session-storage';
+import {
+  STORAGE_KEY_SESSION_ID,
+  STORAGE_KEY_FLEET_REGION,
+  STORAGE_KEY_FLEET_API_BASE,
+} from '../tesla-session-storage';
 import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
@@ -72,6 +76,7 @@ export function DashboardView({
   const [selectedVehicle, setSelectedVehicle] = useState<SelectedVehicle | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [virtualKeyAdded, setVirtualKeyAdded] = useState<boolean | null>(null);
+  const [virtualKeyCheckLoading, setVirtualKeyCheckLoading] = useState(false);
 
   function authHeader(): string {
     return `Bearer ${sessionId}`;
@@ -184,30 +189,28 @@ export function DashboardView({
   }, [sessionId, needsReauth, bridge]);
 
   useEffect(() => {
-    if (!selectedVehicle || needsReauth) {
-      setVirtualKeyAdded(null);
-      return;
+    setVirtualKeyAdded(null);
+  }, [selectedVehicle?.id, selectedVehicle?.vin]);
+
+  async function checkVirtualKeyNow() {
+    if (!selectedVehicle || needsReauth || !sessionId) return;
+    setVirtualKeyCheckLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedVehicle.id != null) params.set('vehicleId', String(selectedVehicle.id));
+      if (selectedVehicle.vin) params.set('vin', selectedVehicle.vin);
+      const res = await fetch(apiUrl(`/api/tesla/check-virtual-key?${params}`), {
+        headers: { Authorization: authHeader() },
+      });
+      noteUnauthorized(res);
+      const data = await res.json();
+      setVirtualKeyAdded(data.virtualKeyAdded === true);
+    } catch {
+      setVirtualKeyAdded(false);
+    } finally {
+      setVirtualKeyCheckLoading(false);
     }
-    let cancelled = false;
-    (async () => {
-      setVirtualKeyAdded(null);
-      if (!sessionId) return;
-      try {
-        const params = new URLSearchParams();
-        if (selectedVehicle.id != null) params.set('vehicleId', String(selectedVehicle.id));
-        if (selectedVehicle.vin) params.set('vin', selectedVehicle.vin);
-        const res = await fetch(apiUrl(`/api/tesla/check-virtual-key?${params}`), {
-          headers: { Authorization: authHeader() },
-        });
-        noteUnauthorized(res);
-        const data = await res.json();
-        if (!cancelled) setVirtualKeyAdded(data.virtualKeyAdded === true);
-      } catch {
-        if (!cancelled) setVirtualKeyAdded(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedVehicle?.id, selectedVehicle?.vin, needsReauth, sessionId]);
+  }
 
   async function handleSelectVehicle(vehicle: TeslaVehicle) {
     const selected: SelectedVehicle = {
@@ -275,6 +278,12 @@ export function DashboardView({
       // ignore
     }
     try {
+      await bridge.setLocalStorage(STORAGE_KEY_FLEET_REGION, '');
+      await bridge.setLocalStorage(STORAGE_KEY_FLEET_API_BASE, '');
+    } catch {
+      // ignore
+    }
+    try {
       await bridge.setLocalStorage('tesla_access_token', '');
       await bridge.setLocalStorage('tesla_refresh_token', '');
       await bridge.setLocalStorage('tesla_token_refreshed_at', '');
@@ -333,22 +342,34 @@ export function DashboardView({
           </div>
         </div>
 
-        {virtualKeyAdded !== true && (
-          <Text
-            variant="subtitle"
-            style={{ marginBottom: 12, display: 'block' }}
-          >
-            To add a virtual key, which is required, open{' '}
-            <a
-              href="https://www.tesla.com/_ak/even.thedevcave.xyz"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
+        {virtualKeyAdded !== true && selectedVehicle && (
+          <div style={{ marginBottom: 12 }}>
+            <Text variant="subtitle" style={{ marginBottom: 8, display: 'block' }}>
+              To add a virtual key, which is required, open{' '}
+              <a
+                href="https://www.tesla.com/_ak/even.thedevcave.xyz"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
+              >
+                https://www.tesla.com/_ak/even.thedevcave.xyz
+              </a>{' '}
+              in a web browser on your phone with the Tesla app installed.
+            </Text>
+            <Button
+              type="button"
+              variant="accent"
+              onClick={() => void checkVirtualKeyNow()}
+              disabled={virtualKeyCheckLoading || needsReauth}
+              style={{ width: '100%' }}
             >
-              https://www.tesla.com/_ak/even.thedevcave.xyz
-            </a>{' '}
-            in a web browser on your phone with the Tesla app installed.
-          </Text>
+              {virtualKeyCheckLoading
+                ? 'Checking…'
+                : virtualKeyAdded === false
+                  ? 'Check virtual key again'
+                  : 'Check virtual key status'}
+            </Button>
+          </div>
         )}
 
         {testStatus === 'success' && (

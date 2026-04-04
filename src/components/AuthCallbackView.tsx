@@ -7,7 +7,11 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { apiUrl } from '../api-base';
-import { STORAGE_KEY_SESSION_ID } from '../tesla-session-storage';
+import {
+  STORAGE_KEY_SESSION_ID,
+  STORAGE_KEY_FLEET_REGION,
+  STORAGE_KEY_FLEET_API_BASE,
+} from '../tesla-session-storage';
 import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 
 const LEGACY_KEYS = ['tesla_access_token', 'tesla_refresh_token', 'tesla_token_refreshed_at'] as const;
@@ -57,6 +61,12 @@ export function AuthCallbackView() {
           const bridge = await waitForEvenAppBridge();
           await clearLegacyTokenKeys(bridge);
           await bridge.setLocalStorage(STORAGE_KEY_SESSION_ID, data.session_id);
+          if (typeof data.region === 'string' && data.region) {
+            await bridge.setLocalStorage(STORAGE_KEY_FLEET_REGION, data.region);
+          }
+          if (typeof data.fleet_api_base === 'string' && data.fleet_api_base) {
+            await bridge.setLocalStorage(STORAGE_KEY_FLEET_API_BASE, data.fleet_api_base);
+          }
           setStatus('success');
           window.location.replace('/');
         } else {
