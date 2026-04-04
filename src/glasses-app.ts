@@ -55,14 +55,12 @@ const CONFIRM_LIST_NAME = 'tesla-confirm-list';
 const CONFIRM_TEXT_ID = 12;
 const CONFIRM_TEXT_NAME = 'tesla-confirm-text';
 
-const CONFIRM_ITEM_NAMES = ['Confirm', 'Cancel'] as const;
+/** Row 0 absorbs host quirk (empty index/name); no-op. Rows 1–2 are Confirm / Cancel. */
+const CONFIRM_ITEM_NAMES = ['Select Below:', 'Confirm', 'Cancel'] as const;
 
-/**
- * Real devices often emit a second list event right after switching to the confirm list, with
- * empty index/name (resolved to row 0). That was executing the command immediately and skipping
- * the confirm UI. Ignore implicit row-0 only during this window; explicit Confirm still works.
- */
-const IMPLICIT_CONFIRM_SUPPRESS_MS = 450;
+const CONFIRM_ROW_PROMPT = 0;
+const CONFIRM_ROW_CONFIRM = 1;
+const CONFIRM_ROW_CANCEL = 2;
 
 /** createStartUpPageContainer / rebuildPageContainer text limit per Even docs */
 const MAX_TEXT_CHARS_CREATE = 1000;
@@ -89,12 +87,8 @@ type GlassesMainUiMode =
 
 let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
 
-/** Set when entering confirm UI; used to drop spurious duplicate list events from the host. */
-let confirmScreenEnteredAtMs = 0;
-
 function resetGlassesMainUiMode(): void {
   glassesMainUiMode = { type: 'main' };
-  confirmScreenEnteredAtMs = 0;
 }
 
 function decodeModelFromVin(vin: string): string {
@@ -315,8 +309,8 @@ function resolveMainListRowIndex(
 }
 
 /**
- * Confirm list: same G2 quirk as the main command list — host may omit index/name for row 0
- * (Confirm). Without that default, simulators and some firmware builds ignore the first row.
+ * Confirm list: row 0 is a no-op prompt; empty index/name from the host maps to row 0 (G2 quirk)
+ * so spurious events do not trigger Confirm. Rows 1–2 are Confirm / Cancel.
  */
 function resolveConfirmListRowIndex(listEvent: object): number | null {
   const names: string[] = [...CONFIRM_ITEM_NAMES];
@@ -345,24 +339,7 @@ function resolveConfirmListRowIndex(listEvent: object): number | null {
     return null;
   }
 
-  return 0;
-}
-
-/** Host sent a real Confirm selection, not empty fields that map to row 0 by G2 convention. */
-function isExplicitConfirmListSelection(listEvent: object): boolean {
-  const idx = readNumber(
-    listEvent,
-    'currentSelectItemIndex',
-    'CurrentSelect_ItemIndex',
-  );
-  if (idx !== undefined && Number.isInteger(idx) && idx === 0) return true;
-  const nameRaw = readString(
-    listEvent,
-    'currentSelectItemName',
-    'CurrentSelect_ItemName',
-  );
-  const t = nameRaw != null ? String(nameRaw).trim() : '';
-  return t === CONFIRM_ITEM_NAMES[0];
+  return CONFIRM_ROW_PROMPT;
 }
 
 export function buildContainerRebuildPage(textContent: string) {
@@ -464,7 +441,6 @@ async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
 
 async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number): Promise<void> {
   glassesMainUiMode = { type: 'confirm', actionIndex };
-  confirmScreenEnteredAtMs = Date.now();
   await bridge.rebuildPageContainer(
     new RebuildPageContainer(buildConfirmPageConfig(actionIndex)),
   );
@@ -485,19 +461,15 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
         const row = resolveConfirmListRowIndex(payload.listEvent);
         if (row == null) return;
         const pending = glassesMainUiMode.actionIndex;
-        if (row === 0) {
-          const elapsed = Date.now() - confirmScreenEnteredAtMs;
-          if (
-            elapsed < IMPLICIT_CONFIRM_SUPPRESS_MS &&
-            !isExplicitConfirmListSelection(payload.listEvent)
-          ) {
-            return;
-          }
+        if (row === CONFIRM_ROW_PROMPT) {
+          return;
+        }
+        if (row === CONFIRM_ROW_CONFIRM) {
           resetGlassesMainUiMode();
           void executeControlCommand(bridge, pending);
           return;
         }
-        if (row === 1) {
+        if (row === CONFIRM_ROW_CANCEL) {
           resetGlassesMainUiMode();
           void refreshGlassesMainPageUi(bridge);
         }
