@@ -16,7 +16,7 @@ export interface ControlAction {
 export const CHARGE_ACTION_INDEX = 5;
 
 export const CONTROL_ACTIONS: ControlAction[] = [
-  { id: 'lock', icon: '/icons/Lock.png', glassesListLabel: 'Lock1', command: 'door_lock' },
+  { id: 'lock', icon: '/icons/Lock.png', glassesListLabel: 'Lock', command: 'door_lock' },
   { id: 'unlock', icon: '/icons/Unlock.png', glassesListLabel: 'Unlock', command: 'door_unlock' },
   {
     id: 'frunk',
