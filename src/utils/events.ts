@@ -37,9 +37,15 @@ export function parseGlassesEvent(event: EvenHubEvent): GlassesEventPayload {
   return { eventType, listEvent, textEvent, sysEvent };
 }
 
-/** Single press: CLICK_EVENT is 0; SDK may normalize to `undefined`. */
-export function isClickEvent(eventType: number | undefined): boolean {
-  return eventType === OsEventTypeList.CLICK_EVENT || eventType === undefined;
+/**
+ * Single press: CLICK_EVENT is 0; SDK may omit `eventType` (`undefined` / null).
+ * Packaged hosts sometimes send string forms (`"0"`, `"CLICK_EVENT"`) before full normalization.
+ */
+export function isClickEvent(eventType: number | string | undefined | null): boolean {
+  if (eventType === undefined || eventType === null) return true;
+  if (eventType === OsEventTypeList.CLICK_EVENT) return true;
+  const normalized = OsEventTypeList.fromJson(eventType);
+  return normalized === OsEventTypeList.CLICK_EVENT;
 }
 
 export function isScrollTopEvent(eventType: number | undefined): boolean {

@@ -303,7 +303,10 @@ function resolveMainListRowIndex(
   return null;
 }
 
-/** Confirm list: only explicit index or name; never default row 0 on empty. */
+/**
+ * Confirm list: same G2 quirk as the main command list — host may omit index/name for row 0
+ * (Confirm). Without that default, simulators and some firmware builds ignore the first row.
+ */
 function resolveConfirmListRowIndex(listEvent: object): number | null {
   const names: string[] = [...CONFIRM_ITEM_NAMES];
   const n = names.length;
@@ -323,11 +326,15 @@ function resolveConfirmListRowIndex(listEvent: object): number | null {
     'CurrentSelect_ItemName',
   );
   const nameTrimmed = nameRaw != null ? String(nameRaw).trim() : '';
-  if (nameTrimmed.length > 0) {
+  const hasName = nameTrimmed.length > 0;
+
+  if (hasName) {
     const i = names.indexOf(nameTrimmed);
     if (i >= 0) return i;
+    return null;
   }
-  return null;
+
+  return 0;
 }
 
 export function buildContainerRebuildPage(textContent: string) {
@@ -371,7 +378,11 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     }
   }
 
-  if (vehicleId == null) return;
+  if (vehicleId == null) {
+    console.warn('[Tesla] Command skipped: no vehicle id (select a vehicle on the phone and Save).');
+    await refreshGlassesMainPageUi(bridge);
+    return;
+  }
 
   const action = CONTROL_ACTIONS[index];
   if (!action) return;
