@@ -2,7 +2,7 @@
   "package_id": "com.theonlydoublee.tesla",
   "edition": "202601",
   "name": "Tesla Controls",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.9",
   "author": "The Only Double E",  
@@ -15,9 +15,11 @@
       "desc": "This app needs to access the network in order to connect to Tesla's API using a hosted proxy",
       "whitelist": ["https://fleet-api.prd.na.vn.cloud.tesla.com",
       "https://fleet-auth.prd.vn.cloud.tesla.com",
+      "https://fleet-api.prd.eu.vn.cloud.tesla.com",
       "https://auth.tesla.com",
       "https://*.tesla.com",
-      "https://even.thedevcave.xyz"]
+      "https://even.thedevcave.xyz",
+      "https://evenbeta.thedevcave.xyz"]
     }
   ],
   "supported_languages": ["en"]
