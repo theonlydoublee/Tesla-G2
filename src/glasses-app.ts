@@ -68,6 +68,9 @@ const CONFIRM_ROW_PROMPT = 0;
 const CONFIRM_ROW_CONFIRM = 1;
 const CONFIRM_ROW_CANCEL = 2;
 
+/** One-row UI while returning from confirm (avoids stale index 2 → main list row 2 / Frunk). */
+const CONFIRM_CANCELING_LABEL = 'Canceling';
+
 /** createStartUpPageContainer / rebuildPageContainer text limit per Even docs */
 const MAX_TEXT_CHARS_CREATE = 1000;
 
@@ -139,7 +142,9 @@ const FALLBACK_TEXT = 'Vehicle data unavailable';
 type GlassesMainUiMode =
   | { type: 'main' }
   | { type: 'confirm'; actionIndex: number; firstRowLabel: string }
-  | { type: 'confirm_sending'; sendingLabel: string };
+  | { type: 'confirm_sending'; sendingLabel: string }
+  /** Dismissing confirm: blocks duplicate list events (Cancel row index === main-list frunk index, etc.). */
+  | { type: 'confirm_canceling' };
 
 let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
 
@@ -673,7 +678,13 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
     onForegroundEnter: () => {
       // Refresh main list when returning to the app, but do not cancel an in-progress confirm sheet
       // (some hosts emit lifecycle noise around list taps).
-      if (glassesMainUiMode.type === 'confirm' || glassesMainUiMode.type === 'confirm_sending') return;
+      if (
+        glassesMainUiMode.type === 'confirm' ||
+        glassesMainUiMode.type === 'confirm_sending' ||
+        glassesMainUiMode.type === 'confirm_canceling'
+      ) {
+        return;
+      }
       resetGlassesMainUiMode();
       void refreshGlassesMainPageUi(bridge);
     },
@@ -681,7 +692,7 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       const et = payload.eventType;
       if (!isClickEvent(et) || payload.listEvent == null) return;
 
-      if (glassesMainUiMode.type === 'confirm_sending') {
+      if (glassesMainUiMode.type === 'confirm_sending' || glassesMainUiMode.type === 'confirm_canceling') {
         return;
       }
 
@@ -714,8 +725,17 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
           return;
         }
         if (row === CONFIRM_ROW_CANCEL) {
-          resetGlassesMainUiMode();
-          void refreshGlassesMainPageUi(bridge);
+          glassesMainUiMode = { type: 'confirm_canceling' };
+          void (async () => {
+            try {
+              await bridge.rebuildPageContainer(
+                new RebuildPageContainer(buildConfirmSendingPageConfig(CONFIRM_CANCELING_LABEL)),
+              );
+            } catch (err) {
+              console.warn('[Tesla] Canceling-state rebuild failed:', err);
+            }
+            await refreshGlassesMainPageUi(bridge);
+          })();
         }
         return;
       }
