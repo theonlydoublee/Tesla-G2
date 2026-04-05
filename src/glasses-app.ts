@@ -82,6 +82,48 @@ const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
  * selected vehicle on the phone, text may stay stale until the glasses app starts again.
  */
 const STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE = 'tesla_glasses_main_text_cache';
+/** Charge/climate booleans from last successful vehicle_data (confirm labels + toggle without re-fetch). */
+const STORAGE_KEY_GLASSES_VEHICLE_SNAPSHOT = 'tesla_glasses_vehicle_snapshot';
+
+type GlassesVehicleSnapshot = { chargingActive: boolean; climateOn: boolean };
+
+function vehicleSnapshotFromVehicleData(vehicleData: unknown): GlassesVehicleSnapshot {
+  const v =
+    vehicleData && typeof vehicleData === 'object'
+      ? (vehicleData as Record<string, unknown>)
+      : {};
+  const chargeState = v.charge_state as { charging_state?: string } | undefined;
+  const climateState = v.climate_state as { is_climate_on?: boolean } | undefined;
+  const chargingActive =
+    chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
+  const climateOn = climateState?.is_climate_on === true;
+  return { chargingActive, climateOn };
+}
+
+async function persistVehicleSnapshot(bridge: EvenAppBridge, vehicleData: unknown): Promise<void> {
+  const snap = vehicleSnapshotFromVehicleData(vehicleData);
+  await bridge.setLocalStorage(STORAGE_KEY_GLASSES_VEHICLE_SNAPSHOT, JSON.stringify(snap));
+}
+
+async function clearVehicleSnapshot(bridge: EvenAppBridge): Promise<void> {
+  try {
+    await bridge.setLocalStorage(STORAGE_KEY_GLASSES_VEHICLE_SNAPSHOT, '');
+  } catch {
+    // ignore
+  }
+}
+
+async function readVehicleSnapshot(bridge: EvenAppBridge): Promise<GlassesVehicleSnapshot | null> {
+  const raw = await bridge.getLocalStorage(STORAGE_KEY_GLASSES_VEHICLE_SNAPSHOT);
+  if (!raw?.trim()) return null;
+  try {
+    const o = JSON.parse(raw) as Partial<GlassesVehicleSnapshot>;
+    if (typeof o.chargingActive !== 'boolean' || typeof o.climateOn !== 'boolean') return null;
+    return { chargingActive: o.chargingActive, climateOn: o.climateOn };
+  } catch {
+    return null;
+  }
+}
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
 
@@ -137,6 +179,15 @@ async function firstRowLabelForToggleAction(
   bridge: EvenAppBridge,
   actionIndex: number,
 ): Promise<string | null> {
+  const snap = await readVehicleSnapshot(bridge);
+  if (snap) {
+    if (actionIndex === CHARGE_ACTION_INDEX) {
+      return snap.chargingActive ? 'Stop Charging:' : 'Start Charging:';
+    }
+    if (actionIndex === CLIMATE_ACTION_INDEX) {
+      return snap.climateOn ? 'Turn Off Climate:' : 'Turn On Climate:';
+    }
+  }
   const payload = await fetchVehicleDataPayload(bridge);
   if (!payload) return null;
   if (actionIndex === CHARGE_ACTION_INDEX) {
@@ -174,7 +225,10 @@ async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<stri
   }
 
   const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
-  if (!sessionId?.trim()) return finalize(FALLBACK_TEXT);
+  if (!sessionId?.trim()) {
+    await clearVehicleSnapshot(bridge);
+    return finalize(FALLBACK_TEXT);
+  }
   const auth = `Bearer ${sessionId.trim()}`;
 
   let vin: string | null = null;
@@ -209,21 +263,30 @@ async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<stri
         }));
       }
     } catch {
+      await clearVehicleSnapshot(bridge);
       return finalize(FALLBACK_TEXT);
     }
   }
 
-  if (!vin) return finalize(FALLBACK_TEXT);
+  if (!vin) {
+    await clearVehicleSnapshot(bridge);
+    return finalize(FALLBACK_TEXT);
+  }
 
   try {
     const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
       headers: { Authorization: auth },
     });
     const data = await res.json();
-    if (!res.ok) return finalize(FALLBACK_TEXT);
+    if (!res.ok) {
+      await clearVehicleSnapshot(bridge);
+      return finalize(FALLBACK_TEXT);
+    }
     const vehicleData = data?.response ?? data;
+    await persistVehicleSnapshot(bridge, vehicleData);
     return finalize(buildTextContentFromVehicleData(vehicleData, storedDisplayName));
   } catch {
+    await clearVehicleSnapshot(bridge);
     return finalize(FALLBACK_TEXT);
   }
 }
@@ -449,36 +512,49 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   let body = action.body;
 
   if (index === CHARGE_ACTION_INDEX) {
-    try {
-      const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
-        headers: { Authorization: auth },
-      });
-      const vData = await vRes.json();
-      const chargeState = vData?.response?.charge_state ?? vData?.charge_state;
-      const charging = chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
-      command = charging ? 'charge_stop' : 'charge_start';
+    const snapCharge = await readVehicleSnapshot(bridge);
+    if (snapCharge) {
+      command = snapCharge.chargingActive ? 'charge_stop' : 'charge_start';
       body = undefined;
-    } catch (err) {
-      console.warn('[Tesla] Charge state fetch failed:', err);
-      await refreshGlassesMainPageUi(bridge);
-      return;
+    } else {
+      try {
+        const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
+          headers: { Authorization: auth },
+        });
+        const vData = await vRes.json();
+        const chargeState = vData?.response?.charge_state ?? vData?.charge_state;
+        const charging =
+          chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
+        command = charging ? 'charge_stop' : 'charge_start';
+        body = undefined;
+      } catch (err) {
+        console.warn('[Tesla] Charge state fetch failed:', err);
+        await refreshGlassesMainPageUi(bridge);
+        return;
+      }
     }
   }
 
   if (index === CLIMATE_ACTION_INDEX) {
-    try {
-      const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
-        headers: { Authorization: auth },
-      });
-      const vData = await vRes.json();
-      const climateState = vData?.response?.climate_state ?? vData?.climate_state;
-      const on = climateState?.is_climate_on === true;
-      command = on ? 'auto_conditioning_stop' : 'auto_conditioning_start';
+    const snapClimate = await readVehicleSnapshot(bridge);
+    if (snapClimate) {
+      command = snapClimate.climateOn ? 'auto_conditioning_stop' : 'auto_conditioning_start';
       body = undefined;
-    } catch (err) {
-      console.warn('[Tesla] Climate state fetch failed:', err);
-      await refreshGlassesMainPageUi(bridge);
-      return;
+    } else {
+      try {
+        const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
+          headers: { Authorization: auth },
+        });
+        const vData = await vRes.json();
+        const climateState = vData?.response?.climate_state ?? vData?.climate_state;
+        const on = climateState?.is_climate_on === true;
+        command = on ? 'auto_conditioning_stop' : 'auto_conditioning_start';
+        body = undefined;
+      } catch (err) {
+        console.warn('[Tesla] Climate state fetch failed:', err);
+        await refreshGlassesMainPageUi(bridge);
+        return;
+      }
     }
   }
 
@@ -498,6 +574,9 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
   } finally {
+    if (index === CHARGE_ACTION_INDEX || index === CLIMATE_ACTION_INDEX) {
+      await refreshMainPageTextFromTesla(bridge);
+    }
     await refreshGlassesMainPageUi(bridge);
   }
 }

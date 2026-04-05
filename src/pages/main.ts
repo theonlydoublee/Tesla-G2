@@ -23,6 +23,9 @@ export interface PageData {
 /** Tesla vehicle_data API response shape (subset we use). */
 export interface TeslaVehicleDataResponse {
   display_name?: string | null;
+  climate_state?: {
+    is_climate_on?: boolean | null;
+  } | null;
   charge_state?: {
     battery_level?: number | null;
     usable_battery_level?: number | null;
@@ -92,9 +95,13 @@ export function buildTextContentFromVehicleData(
   const chargingState = chargeState?.charging_state ?? '';
   const isCharging = chargingState === 'Charging' || chargingState === 'Starting';
 
+  const climateState = vehicleData.climate_state;
+  const climateOn = climateState?.is_climate_on === true;
+
   const lines = [
     `${displayName} - ${batteryLevel}% - ${mileage} mi`,
     drivingStateStr,
+    climateOn ? 'Climate: On' : 'Climate: Off',
   ];
 
   if (isCharging && chargeState) {
