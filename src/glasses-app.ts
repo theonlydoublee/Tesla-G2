@@ -74,12 +74,19 @@ function clipTextForCreatePage(s: string): string {
   return `${s.slice(0, MAX_TEXT_CHARS_CREATE - 2)}\n…`;
 }
 
+/** Tesla vehicle_data often lags charge/climate for a second or two after a successful command. */
+const TOGGLE_STATE_REFRESH_DELAY_MS = 2500;
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
 
 /**
- * Cached right-pane status text for glasses main page. Written only by refreshMainPageTextFromTesla
- * (startGlassesApp). Rebuilds use getCachedMainPageText — no network. If the user changes the
- * selected vehicle on the phone, text may stay stale until the glasses app starts again.
+ * Cached right-pane status text for glasses main page. Written by refreshMainPageTextFromTesla
+ * (startup and after charge/climate commands). Rebuilds use getCachedMainPageText — no network.
+ * If the user changes the selected vehicle on the phone, text may stay stale until the glasses app starts again.
  */
 const STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE = 'tesla_glasses_main_text_cache';
 /** Charge/climate booleans from last successful vehicle_data (confirm labels + toggle without re-fetch). */
@@ -217,7 +224,7 @@ function decodeModelFromVin(vin: string): string {
   }
 }
 
-/** Persist status text and return it (call from startGlassesApp only). */
+/** Persist status text + vehicle snapshot; return text (startup and after charge/climate toggles). */
 async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<string> {
   async function finalize(text: string): Promise<string> {
     await bridge.setLocalStorage(STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE, text);
@@ -558,6 +565,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     }
   }
 
+  let toggleCommandSucceeded = false;
   try {
     const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
     const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
@@ -568,13 +576,18 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
       },
       body: reqBody ? JSON.stringify(reqBody) : undefined,
     });
+    toggleCommandSucceeded = res.ok;
     if (!res.ok) {
       console.warn('[Tesla] Command HTTP error:', command, res.status);
     }
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
   } finally {
-    if (index === CHARGE_ACTION_INDEX || index === CLIMATE_ACTION_INDEX) {
+    const isChargeOrClimate = index === CHARGE_ACTION_INDEX || index === CLIMATE_ACTION_INDEX;
+    if (isChargeOrClimate) {
+      if (toggleCommandSucceeded) {
+        await delayMs(TOGGLE_STATE_REFRESH_DELAY_MS);
+      }
       await refreshMainPageTextFromTesla(bridge);
     }
     await refreshGlassesMainPageUi(bridge);
