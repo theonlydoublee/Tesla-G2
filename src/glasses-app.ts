@@ -28,6 +28,7 @@ import {
   CLIMATE_ACTION_INDEX,
   buildConfirmListItemNames,
   buildGlassesListItemNames,
+  sendingStatusLabelForAction,
 } from './controls-config';
 
 export type PageType = 'main' | 'controls' | 'climate' | 'charging';
@@ -136,7 +137,8 @@ const FALLBACK_TEXT = 'Vehicle data unavailable';
 
 type GlassesMainUiMode =
   | { type: 'main' }
-  | { type: 'confirm'; actionIndex: number; firstRowLabel: string };
+  | { type: 'confirm'; actionIndex: number; firstRowLabel: string }
+  | { type: 'confirm_sending'; sendingLabel: string };
 
 let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
 
@@ -378,6 +380,33 @@ function buildConfirmPageConfig(actionIndex: number, firstRowLabel: string) {
     itemContainer: new ListItemContainerProperty({
       itemCount: confirmNames.length,
       itemName: confirmNames,
+    }),
+  });
+
+  return {
+    containerTotalNum: 1,
+    listObject: [listContainer],
+  };
+}
+
+/** After Confirm: single-row list so user sees progress and cannot tap Confirm/Cancel again. */
+function buildConfirmSendingPageConfig(sendingLabel: string) {
+  const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
+  const listContainer = new ListContainerProperty({
+    xPosition: listX,
+    yPosition: 0,
+    width: CONFIRM_LIST_WIDTH,
+    height: CANVAS_HEIGHT,
+    borderWidth: 2,
+    borderColor: 5,
+    borderRadius: 6,
+    paddingLength: 0,
+    containerID: CONFIRM_LIST_ID,
+    containerName: CONFIRM_LIST_NAME,
+    isEventCapture: 1,
+    itemContainer: new ListItemContainerProperty({
+      itemCount: 1,
+      itemName: [sendingLabel],
     }),
   });
 
@@ -635,13 +664,17 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
     onForegroundEnter: () => {
       // Refresh main list when returning to the app, but do not cancel an in-progress confirm sheet
       // (some hosts emit lifecycle noise around list taps).
-      if (glassesMainUiMode.type === 'confirm') return;
+      if (glassesMainUiMode.type === 'confirm' || glassesMainUiMode.type === 'confirm_sending') return;
       resetGlassesMainUiMode();
       void refreshGlassesMainPageUi(bridge);
     },
     onEvent: (payload) => {
       const et = payload.eventType;
       if (!isClickEvent(et) || payload.listEvent == null) return;
+
+      if (glassesMainUiMode.type === 'confirm_sending') {
+        return;
+      }
 
       if (glassesMainUiMode.type === 'confirm') {
         const pending = glassesMainUiMode.actionIndex;
@@ -655,8 +688,20 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
           return;
         }
         if (row === CONFIRM_ROW_CONFIRM) {
-          resetGlassesMainUiMode();
-          void executeControlCommand(bridge, pending);
+          const actionIndex = glassesMainUiMode.actionIndex;
+          const firstRowLabel = glassesMainUiMode.firstRowLabel;
+          const sendingLabel = sendingStatusLabelForAction(actionIndex, firstRowLabel);
+          glassesMainUiMode = { type: 'confirm_sending', sendingLabel };
+          void (async () => {
+            try {
+              await bridge.rebuildPageContainer(
+                new RebuildPageContainer(buildConfirmSendingPageConfig(sendingLabel)),
+              );
+            } catch (err) {
+              console.warn('[Tesla] Sending-state rebuild failed:', err);
+            }
+            void executeControlCommand(bridge, actionIndex);
+          })();
           return;
         }
         if (row === CONFIRM_ROW_CANCEL) {
