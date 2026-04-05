@@ -25,6 +25,7 @@ import { buildTextContentFromVehicleData } from './pages/main';
 import {
   CONTROL_ACTIONS,
   CHARGE_ACTION_INDEX,
+  buildConfirmListItemNames,
   buildGlassesListItemNames,
 } from './controls-config';
 
@@ -50,21 +51,16 @@ const MAIN_TEXT_ID = 2;
 const MAIN_TEXT_NAME = 'main-text';
 
 /**
- * Confirm step: own container IDs/names (never reuse main CMD/MAIN ids).
- * Names ≤16 chars per Display guide.
+ * Confirm step: own container id/name (never reuse main CMD/MAIN ids).
+ * Name ≤16 chars per Display guide.
  */
-const CONFIRM_HDR_ID = 20;
-const CONFIRM_HDR_NAME = 'tesla-cfm-hdr';
 const CONFIRM_LIST_ID = 21;
 const CONFIRM_LIST_NAME = 'tesla-cfm-lst';
 
-/** Centered list band; 576-wide canvas. */
+/** Centered list; full canvas height (no header text). */
 const CONFIRM_LIST_WIDTH = 320;
-const CONFIRM_HEADER_HEIGHT = 72;
 
 /** Row 0 absorbs host quirk (empty index/name); no-op. Rows 1–2 are Confirm / Cancel. */
-const CONFIRM_ITEM_NAMES = ['Select Below:', 'Confirm', 'Cancel'] as const;
-
 const CONFIRM_ROW_PROMPT = 0;
 const CONFIRM_ROW_CONFIRM = 1;
 const CONFIRM_ROW_CANCEL = 2;
@@ -234,38 +230,18 @@ function buildContainerMainPageConfig(textContent: string) {
 }
 
 /**
- * Confirm UI: top summary line + list centered horizontally (not the main left list / right text split).
+ * Confirm UI: single centered list (per-action prompt row + Confirm / Cancel).
  * @see https://hub.evenrealities.com/docs/guides/display
  */
 function buildConfirmPageConfig(actionIndex: number) {
-  const action = CONTROL_ACTIONS[actionIndex];
-  const label = action?.glassesListLabel ?? 'Action';
-  const headerContent = clipTextForCreatePage(`Run:\n${label}?`);
-
+  const confirmNames = buildConfirmListItemNames(actionIndex);
   const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
-  const listY = CONFIRM_HEADER_HEIGHT;
-  const listHeight = CANVAS_HEIGHT - CONFIRM_HEADER_HEIGHT;
-
-  const headerText = new TextContainerProperty({
-    xPosition: 0,
-    yPosition: 0,
-    width: CANVAS_WIDTH,
-    height: CONFIRM_HEADER_HEIGHT,
-    borderWidth: 0,
-    borderColor: 5,
-    borderRadius: 0,
-    paddingLength: 8,
-    containerID: CONFIRM_HDR_ID,
-    containerName: CONFIRM_HDR_NAME,
-    content: headerContent,
-    isEventCapture: 0,
-  });
 
   const listContainer = new ListContainerProperty({
     xPosition: listX,
-    yPosition: listY,
+    yPosition: 0,
     width: CONFIRM_LIST_WIDTH,
-    height: listHeight,
+    height: CANVAS_HEIGHT,
     borderWidth: 2,
     borderColor: 5,
     borderRadius: 6,
@@ -274,15 +250,14 @@ function buildConfirmPageConfig(actionIndex: number) {
     containerName: CONFIRM_LIST_NAME,
     isEventCapture: 1,
     itemContainer: new ListItemContainerProperty({
-      itemCount: CONFIRM_ITEM_NAMES.length,
-      itemName: [...CONFIRM_ITEM_NAMES],
+      itemCount: confirmNames.length,
+      itemName: confirmNames,
     }),
   });
 
   return {
-    containerTotalNum: 2,
+    containerTotalNum: 1,
     listObject: [listContainer],
-    textObject: [headerText],
   };
 }
 
@@ -330,8 +305,11 @@ function resolveMainListRowIndex(
  * Confirm list: row 0 is a no-op prompt; empty index/name from the host maps to row 0 (G2 quirk)
  * so spurious events do not trigger Confirm. Rows 1–2 are Confirm / Cancel.
  */
-function resolveConfirmListRowIndex(listEvent: object): number | null {
-  const names: string[] = [...CONFIRM_ITEM_NAMES];
+function resolveConfirmListRowIndex(
+  listEvent: object,
+  actionIndex: number,
+): number | null {
+  const names = buildConfirmListItemNames(actionIndex);
   const n = names.length;
 
   const idx = readNumber(
@@ -487,9 +465,9 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       if (!isClickEvent(et) || payload.listEvent == null) return;
 
       if (glassesMainUiMode.type === 'confirm') {
-        const row = resolveConfirmListRowIndex(payload.listEvent);
-        if (row == null) return;
         const pending = glassesMainUiMode.actionIndex;
+        const row = resolveConfirmListRowIndex(payload.listEvent, pending);
+        if (row == null) return;
         if (row === CONFIRM_ROW_PROMPT) {
           return;
         }
