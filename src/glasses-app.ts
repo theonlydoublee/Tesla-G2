@@ -71,6 +71,9 @@ const CONFIRM_ROW_CANCEL = 2;
 /** One-row UI while returning from confirm (avoids stale index 2 → main list row 2 / Frunk). */
 const CONFIRM_CANCELING_LABEL = 'Canceling';
 
+/** One-row UI before real confirm (avoids stale main tap index → Confirm/Cancel row). */
+const CONFIRM_LOADING_LABEL = 'Loading...';
+
 /** createStartUpPageContainer / rebuildPageContainer text limit per Even docs */
 const MAX_TEXT_CHARS_CREATE = 1000;
 
@@ -141,6 +144,8 @@ const FALLBACK_TEXT = 'Vehicle data unavailable';
 
 type GlassesMainUiMode =
   | { type: 'main' }
+  /** One-row "Loading..." while fetching toggle labels; absorbs duplicate main-list indices. */
+  | { type: 'confirm_loading'; actionIndex: number }
   | { type: 'confirm'; actionIndex: number; firstRowLabel: string }
   | { type: 'confirm_sending'; sendingLabel: string }
   /** Dismissing confirm: blocks duplicate list events (Cancel row index === main-list frunk index, etc.). */
@@ -679,6 +684,7 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       // Refresh main list when returning to the app, but do not cancel an in-progress confirm sheet
       // (some hosts emit lifecycle noise around list taps).
       if (
+        glassesMainUiMode.type === 'confirm_loading' ||
         glassesMainUiMode.type === 'confirm' ||
         glassesMainUiMode.type === 'confirm_sending' ||
         glassesMainUiMode.type === 'confirm_canceling'
@@ -692,7 +698,11 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       const et = payload.eventType;
       if (!isClickEvent(et) || payload.listEvent == null) return;
 
-      if (glassesMainUiMode.type === 'confirm_sending' || glassesMainUiMode.type === 'confirm_canceling') {
+      if (
+        glassesMainUiMode.type === 'confirm_loading' ||
+        glassesMainUiMode.type === 'confirm_sending' ||
+        glassesMainUiMode.type === 'confirm_canceling'
+      ) {
         return;
       }
 
@@ -745,7 +755,18 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       });
       if (row == null) return;
       if (row < 0 || row >= CONTROL_ACTIONS.length) return;
-      void showConfirmForAction(bridge, row);
+      const actionIndex = row;
+      glassesMainUiMode = { type: 'confirm_loading', actionIndex };
+      void (async () => {
+        try {
+          await bridge.rebuildPageContainer(
+            new RebuildPageContainer(buildConfirmSendingPageConfig(CONFIRM_LOADING_LABEL)),
+          );
+        } catch (err) {
+          console.warn('[Tesla] Confirm loading rebuild failed:', err);
+        }
+        await showConfirmForAction(bridge, actionIndex);
+      })();
     },
   });
 }
