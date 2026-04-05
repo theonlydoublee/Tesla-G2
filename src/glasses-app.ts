@@ -153,6 +153,13 @@ type GlassesMainUiMode =
 
 let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
 
+/**
+ * Double-tap calls `shutDownPageContainer(1)`, which tears down the glasses UI. `rebuildPageContainer`
+ * cannot recreate it — only `createStartUpPageContainer` (see `startGlassesApp`). App-switch typically
+ * only backgrounds the plugin, so the container stays alive and rebuild works.
+ */
+let glassesMainContainerNeedsColdStart = false;
+
 /** Prior subscription from setupGlassesEventHandler — must clear before adding another (Hub stacks callbacks). */
 let glassesHubUnsubscribe: (() => void) | null = null;
 
@@ -680,7 +687,17 @@ async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number):
 function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   glassesHubUnsubscribe?.();
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
+    onDoubleClick: () => {
+      bridge.shutDownPageContainer(1);
+      glassesMainContainerNeedsColdStart = true;
+    },
     onForegroundEnter: () => {
+      if (glassesMainContainerNeedsColdStart) {
+        queueMicrotask(() => {
+          void startGlassesApp(bridge);
+        });
+        return;
+      }
       // Refresh main list when returning to the app, but do not cancel an in-progress confirm sheet
       // (some hosts emit lifecycle noise around list taps).
       if (
@@ -817,6 +834,7 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
     return;
   }
 
+  glassesMainContainerNeedsColdStart = false;
   attachMainPageGlassesHandlers(bridge);
 }
 
