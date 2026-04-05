@@ -14,6 +14,9 @@ export interface ControlAction {
   body?: Record<string, unknown>;
 }
 
+/** Climate is a toggle - determined at runtime from vehicle_data. */
+export const CLIMATE_ACTION_INDEX = 4;
+
 /** Charge is a toggle - determined at runtime from vehicle_data. */
 export const CHARGE_ACTION_INDEX = 5;
 
@@ -87,8 +90,15 @@ export function buildGlassesListItemNames(): string[] {
   return CONTROL_ACTIONS.map((a) => a.glassesListLabel);
 }
 
-/** Confirm list rows: per-action prompt, then Confirm / Cancel. */
-export function buildConfirmListItemNames(actionIndex: number): string[] {
+/**
+ * Confirm list rows: prompt (static or precomputed for charge/climate), then Confirm / Cancel.
+ * When `firstRowLabel` is set (e.g. from vehicle_data), it overrides `confirmPromptLabel`.
+ */
+export function buildConfirmListItemNames(actionIndex: number, firstRowLabel?: string): string[] {
+  const trimmed = firstRowLabel?.trim();
+  if (trimmed) {
+    return [trimmed, ...CONFIRM_SUFFIX];
+  }
   const action = CONTROL_ACTIONS[actionIndex];
   const prompt = action?.confirmPromptLabel?.trim() || 'Action:';
   return [prompt, ...CONFIRM_SUFFIX];

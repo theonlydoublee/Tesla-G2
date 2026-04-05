@@ -25,6 +25,7 @@ import { buildTextContentFromVehicleData } from './pages/main';
 import {
   CONTROL_ACTIONS,
   CHARGE_ACTION_INDEX,
+  CLIMATE_ACTION_INDEX,
   buildConfirmListItemNames,
   buildGlassesListItemNames,
 } from './controls-config';
@@ -86,7 +87,7 @@ const FALLBACK_TEXT = 'Vehicle data unavailable';
 
 type GlassesMainUiMode =
   | { type: 'main' }
-  | { type: 'confirm'; actionIndex: number };
+  | { type: 'confirm'; actionIndex: number; firstRowLabel: string };
 
 let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
 
@@ -95,6 +96,61 @@ let glassesHubUnsubscribe: (() => void) | null = null;
 
 function resetGlassesMainUiMode(): void {
   glassesMainUiMode = { type: 'main' };
+}
+
+async function getAuthAndVin(bridge: EvenAppBridge): Promise<{ auth: string; vin: string } | null> {
+  const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
+  if (!sessionId?.trim()) return null;
+  const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
+  if (!stored) return null;
+  try {
+    const parsed = JSON.parse(stored) as { vin?: string };
+    if (!parsed?.vin) return null;
+    return { auth: `Bearer ${sessionId.trim()}`, vin: parsed.vin };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchVehicleDataPayload(
+  bridge: EvenAppBridge,
+): Promise<{ charge_state?: unknown; climate_state?: unknown } | null> {
+  const ctx = await getAuthAndVin(bridge);
+  if (!ctx) return null;
+  try {
+    const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${ctx.vin}`), {
+      headers: { Authorization: ctx.auth },
+    });
+    const vData = await vRes.json();
+    if (!vRes.ok) return null;
+    const vehicle = vData?.response ?? vData;
+    return {
+      charge_state: vehicle?.charge_state,
+      climate_state: vehicle?.climate_state,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function firstRowLabelForToggleAction(
+  bridge: EvenAppBridge,
+  actionIndex: number,
+): Promise<string | null> {
+  const payload = await fetchVehicleDataPayload(bridge);
+  if (!payload) return null;
+  if (actionIndex === CHARGE_ACTION_INDEX) {
+    const chargeState = payload.charge_state as { charging_state?: string } | undefined;
+    const charging =
+      chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
+    return charging ? 'Stop Charging:' : 'Start Charging:';
+  }
+  if (actionIndex === CLIMATE_ACTION_INDEX) {
+    const climateState = payload.climate_state as { is_climate_on?: boolean } | undefined;
+    const on = climateState?.is_climate_on === true;
+    return on ? 'Turn Off Climate:' : 'Turn On Climate:';
+  }
+  return null;
 }
 
 function decodeModelFromVin(vin: string): string {
@@ -233,8 +289,8 @@ function buildContainerMainPageConfig(textContent: string) {
  * Confirm UI: single centered list (per-action prompt row + Confirm / Cancel).
  * @see https://hub.evenrealities.com/docs/guides/display
  */
-function buildConfirmPageConfig(actionIndex: number) {
-  const confirmNames = buildConfirmListItemNames(actionIndex);
+function buildConfirmPageConfig(actionIndex: number, firstRowLabel: string) {
+  const confirmNames = buildConfirmListItemNames(actionIndex, firstRowLabel);
   const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
 
   const listContainer = new ListContainerProperty({
@@ -308,8 +364,9 @@ function resolveMainListRowIndex(
 function resolveConfirmListRowIndex(
   listEvent: object,
   actionIndex: number,
+  firstRowLabel: string,
 ): number | null {
-  const names = buildConfirmListItemNames(actionIndex);
+  const names = buildConfirmListItemNames(actionIndex, firstRowLabel);
   const n = names.length;
 
   const idx = readNumber(
@@ -408,6 +465,23 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     }
   }
 
+  if (index === CLIMATE_ACTION_INDEX) {
+    try {
+      const vRes = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
+        headers: { Authorization: auth },
+      });
+      const vData = await vRes.json();
+      const climateState = vData?.response?.climate_state ?? vData?.climate_state;
+      const on = climateState?.is_climate_on === true;
+      command = on ? 'auto_conditioning_stop' : 'auto_conditioning_start';
+      body = undefined;
+    } catch (err) {
+      console.warn('[Tesla] Climate state fetch failed:', err);
+      await refreshGlassesMainPageUi(bridge);
+      return;
+    }
+  }
+
   try {
     const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
     const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
@@ -440,9 +514,22 @@ async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
  * much slower on hardware; rebuild matches Cancel/Confirm return path and feels instant.
  */
 async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number): Promise<void> {
-  glassesMainUiMode = { type: 'confirm', actionIndex };
+  let firstRowLabel =
+    CONTROL_ACTIONS[actionIndex]?.confirmPromptLabel?.trim() || 'Action:';
+
+  if (actionIndex === CHARGE_ACTION_INDEX || actionIndex === CLIMATE_ACTION_INDEX) {
+    const toggled = await firstRowLabelForToggleAction(bridge, actionIndex);
+    if (toggled == null) {
+      console.warn('[Tesla] Could not load vehicle state for confirm sheet.');
+      await refreshGlassesMainPageUi(bridge);
+      return;
+    }
+    firstRowLabel = toggled;
+  }
+
+  glassesMainUiMode = { type: 'confirm', actionIndex, firstRowLabel };
   await bridge.rebuildPageContainer(
-    new RebuildPageContainer(buildConfirmPageConfig(actionIndex)),
+    new RebuildPageContainer(buildConfirmPageConfig(actionIndex, firstRowLabel)),
   );
 }
 
@@ -466,7 +553,11 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
 
       if (glassesMainUiMode.type === 'confirm') {
         const pending = glassesMainUiMode.actionIndex;
-        const row = resolveConfirmListRowIndex(payload.listEvent, pending);
+        const row = resolveConfirmListRowIndex(
+          payload.listEvent,
+          pending,
+          glassesMainUiMode.firstRowLabel,
+        );
         if (row == null) return;
         if (row === CONFIRM_ROW_PROMPT) {
           return;
