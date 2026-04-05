@@ -60,7 +60,8 @@ const CONFIRM_LIST_ID = 21;
 const CONFIRM_LIST_NAME = 'tesla-cfm-lst';
 
 /** Centered list; full canvas height (no header text). */
-const CONFIRM_LIST_WIDTH = 320;
+const CONFIRM_LIST_WIDTH = 256;
+const CONFIRM_LIST_HEIGHT = 175;
 
 /** Row 0 absorbs host quirk (empty index/name); no-op. Rows 1–2 are Confirm / Cancel. */
 const CONFIRM_ROW_PROMPT = 0;
@@ -364,12 +365,13 @@ function buildContainerMainPageConfig(textContent: string) {
 function buildConfirmPageConfig(actionIndex: number, firstRowLabel: string) {
   const confirmNames = buildConfirmListItemNames(actionIndex, firstRowLabel);
   const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
+  const listY = Math.floor((CANVAS_HEIGHT - CONFIRM_LIST_HEIGHT) / 2);
 
   const listContainer = new ListContainerProperty({
     xPosition: listX,
-    yPosition: 0,
+    yPosition: listY,
     width: CONFIRM_LIST_WIDTH,
-    height: CANVAS_HEIGHT,
+    height: CONFIRM_LIST_HEIGHT,
     borderWidth: 2,
     borderColor: 5,
     borderRadius: 6,
@@ -392,11 +394,12 @@ function buildConfirmPageConfig(actionIndex: number, firstRowLabel: string) {
 /** After Confirm: single-row list so user sees progress and cannot tap Confirm/Cancel again. */
 function buildConfirmSendingPageConfig(sendingLabel: string) {
   const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
+  const listY = Math.floor((CANVAS_HEIGHT - CONFIRM_LIST_HEIGHT) / 2);
   const listContainer = new ListContainerProperty({
     xPosition: listX,
-    yPosition: 0,
+    yPosition: listY,
     width: CONFIRM_LIST_WIDTH,
-    height: CANVAS_HEIGHT,
+    height: CONFIRM_LIST_HEIGHT,
     borderWidth: 2,
     borderColor: 5,
     borderRadius: 6,
