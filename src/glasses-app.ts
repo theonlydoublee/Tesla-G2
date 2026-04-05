@@ -458,20 +458,14 @@ async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
 }
 
 /**
- * Show confirm as a fresh startup-style page when the host allows it; otherwise rebuild.
- * SDK: createStartUpPageContainer at launch; confirm uses the same path so firmware treats it as a new page, not an in-place list swap.
+ * Confirm uses rebuildPageContainer only. createStartUpPageContainer is for app launch and is
+ * much slower on hardware; rebuild matches Cancel/Confirm return path and feels instant.
  */
 async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number): Promise<void> {
   glassesMainUiMode = { type: 'confirm', actionIndex };
-  const page = buildConfirmPageConfig(actionIndex);
-  const createResult = await bridge.createStartUpPageContainer(
-    new CreateStartUpPageContainer(page),
+  await bridge.rebuildPageContainer(
+    new RebuildPageContainer(buildConfirmPageConfig(actionIndex)),
   );
-  const created = StartUpPageCreateResult.normalize(createResult);
-  if (created !== StartUpPageCreateResult.success) {
-    console.warn('[Tesla] confirm createStartUpPageContainer failed, using rebuild:', createResult, created);
-    await bridge.rebuildPageContainer(new RebuildPageContainer(page));
-  }
 }
 
 /**
