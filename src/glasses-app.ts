@@ -547,6 +547,12 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   const action = CONTROL_ACTIONS[index];
   if (!action) return;
 
+  const refreshTextAfterCommand =
+    index === CHARGE_ACTION_INDEX ||
+    index === CLIMATE_ACTION_INDEX ||
+    action.id === "lock" ||
+    action.id === "unlock";
+
   let command = action.command;
   let body = action.body;
 
@@ -616,8 +622,8 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     console.warn('[Tesla] Command failed:', command, err);
   } finally {
     const isChargeOrClimate = index === CHARGE_ACTION_INDEX || index === CLIMATE_ACTION_INDEX;
-    if (isChargeOrClimate) {
-      if (toggleCommandSucceeded) {
+    if (refreshTextAfterCommand) {
+      if (isChargeOrClimate && toggleCommandSucceeded) {
         await delayMs(TOGGLE_STATE_REFRESH_DELAY_MS);
       }
       await refreshMainPageTextFromTesla(bridge);

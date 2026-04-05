@@ -42,6 +42,9 @@ export interface TeslaVehicleDataResponse {
   drive_state?: {
     shift_state?: string | null;
   } | null;
+  vehicle_state?: {
+    locked?: boolean | null;
+  } | null;
 }
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
@@ -92,6 +95,11 @@ export function buildTextContentFromVehicleData(
   const mileage = Math.round(batteryRange);
   const shiftState = driveState?.shift_state ?? null;
   const drivingStateStr = formatDriveState(shiftState);
+  const locked = vehicleData.vehicle_state?.locked;
+  const drivingLine =
+    typeof locked === 'boolean'
+      ? `${drivingStateStr} - ${locked ? 'Locked' : 'Unlocked'}`
+      : drivingStateStr;
   const chargingState = chargeState?.charging_state ?? '';
   const isCharging = chargingState === 'Charging' || chargingState === 'Starting';
 
@@ -100,7 +108,7 @@ export function buildTextContentFromVehicleData(
 
   const lines = [
     `${displayName} - ${batteryLevel}% - ${mileage} mi`,
-    drivingStateStr,
+    drivingLine,
     climateOn ? 'Climate: On' : 'Climate: Off',
   ];
 
