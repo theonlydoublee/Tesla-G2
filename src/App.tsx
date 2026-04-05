@@ -58,12 +58,16 @@ export function App() {
           await clearLegacyTokenKeys(b);
           setSessionId(session!.trim());
           markSessionConnected();
-          await startGlassesApp(b);
+          // Do not block UI on glasses: concurrent native create + foreground cold-start can hang if awaited.
+          setInitialized(true);
+          void startGlassesApp(b).catch((err) => {
+            console.error('[Tesla] startGlassesApp failed:', err);
+          });
         } else {
           await clearLegacyTokenKeys(b);
           await startGlassesCredentialsMessage(b);
+          setInitialized(true);
         }
-        setInitialized(true);
       })
       .catch((err) => {
         console.error('[Tesla] init error:', err);

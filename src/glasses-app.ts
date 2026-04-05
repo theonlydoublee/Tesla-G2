@@ -160,6 +160,38 @@ let glassesMainUiMode: GlassesMainUiMode = { type: 'main' };
  */
 let glassesMainContainerNeedsColdStart = false;
 
+/** Survives WebView reload so reopen after double-tap still cold-starts (in-memory flag resets on remount). */
+const STORAGE_KEY_GLASSES_PAGE_SHUT_DOWN = 'tesla_glasses_page_shut_down';
+
+/** Avoid concurrent `createStartUpPageContainer` — native side can hang if two starts overlap. */
+let startGlassesAppMutex: Promise<void> | null = null;
+
+function markGlassesPageShutDown(): void {
+  glassesMainContainerNeedsColdStart = true;
+  try {
+    sessionStorage.setItem(STORAGE_KEY_GLASSES_PAGE_SHUT_DOWN, '1');
+  } catch {
+    // private mode / unavailable
+  }
+}
+
+function clearGlassesPageShutDown(): void {
+  glassesMainContainerNeedsColdStart = false;
+  try {
+    sessionStorage.removeItem(STORAGE_KEY_GLASSES_PAGE_SHUT_DOWN);
+  } catch {
+    // ignore
+  }
+}
+
+function shouldColdStartGlassesFromStorage(): boolean {
+  try {
+    return sessionStorage.getItem(STORAGE_KEY_GLASSES_PAGE_SHUT_DOWN) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** Prior subscription from setupGlassesEventHandler — must clear before adding another (Hub stacks callbacks). */
 let glassesHubUnsubscribe: (() => void) | null = null;
 
@@ -689,10 +721,10 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
     onDoubleClick: () => {
       bridge.shutDownPageContainer(1);
-      glassesMainContainerNeedsColdStart = true;
+      markGlassesPageShutDown();
     },
     onForegroundEnter: () => {
-      if (glassesMainContainerNeedsColdStart) {
+      if (glassesMainContainerNeedsColdStart || shouldColdStartGlassesFromStorage()) {
         queueMicrotask(() => {
           void startGlassesApp(bridge);
         });
@@ -822,20 +854,30 @@ function buildCredentialsMessagePage() {
 
 /**
  * Start the glasses app (container main page and event handling). Call when session id exists.
+ * Serialized: overlapping calls share one in-flight run (Hub foreground + React init).
  */
 export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
-  resetGlassesMainUiMode();
-  const textContent = await refreshMainPageTextFromTesla(bridge);
-  const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent));
-  const result = await bridge.createStartUpPageContainer(config);
-  const created = StartUpPageCreateResult.normalize(result);
-  if (created !== StartUpPageCreateResult.success) {
-    console.error('[Tesla] createStartUpPageContainer failed:', result, created);
-    return;
+  if (startGlassesAppMutex) {
+    return startGlassesAppMutex;
   }
-
-  glassesMainContainerNeedsColdStart = false;
-  attachMainPageGlassesHandlers(bridge);
+  startGlassesAppMutex = (async () => {
+    try {
+      resetGlassesMainUiMode();
+      const textContent = await refreshMainPageTextFromTesla(bridge);
+      const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent));
+      const result = await bridge.createStartUpPageContainer(config);
+      const created = StartUpPageCreateResult.normalize(result);
+      if (created !== StartUpPageCreateResult.success) {
+        console.error('[Tesla] createStartUpPageContainer failed:', result, created);
+        return;
+      }
+      clearGlassesPageShutDown();
+      attachMainPageGlassesHandlers(bridge);
+    } finally {
+      startGlassesAppMutex = null;
+    }
+  })();
+  return startGlassesAppMutex;
 }
 
 /**
