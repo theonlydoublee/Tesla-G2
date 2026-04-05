@@ -681,11 +681,19 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   }
 }
 
-/** Rebuild main command UI from cache (resets to main layout; no vehicle_data fetch). */
-async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<void> {
+/**
+ * Rebuild main command UI from cache (resets to main layout; no vehicle_data fetch).
+ * @returns whether the host reported rebuild success (false if no active page container).
+ */
+async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<boolean> {
   resetGlassesMainUiMode();
   const textContent = await getCachedMainPageText(bridge);
-  await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
+  try {
+    return await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
+  } catch (err) {
+    console.warn('[Tesla] rebuildPageContainer failed:', err);
+    return false;
+  }
 }
 
 /**
@@ -720,9 +728,9 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   glassesHubUnsubscribe?.();
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
     onDoubleClick: () => {
-      // 0 = immediate exit; 1 = host confirmation dialog and page may stay "active", so a later
-      // createStartUpPageContainer fails with "already active" (see Page Lifecycle guide).
-      bridge.shutDownPageContainer(0);
+      // 1 = normal exit with host confirmation (Page Lifecycle). Still mark shutdown so reopen
+      // cold-starts; create may fall back to rebuild if the page stays active until confirmed.
+      bridge.shutDownPageContainer(1);
       markGlassesPageShutDown();
     },
     onForegroundEnter: () => {
@@ -743,7 +751,12 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
         return;
       }
       resetGlassesMainUiMode();
-      void refreshGlassesMainPageUi(bridge);
+      void (async () => {
+        const rebuilt = await refreshGlassesMainPageUi(bridge);
+        if (!rebuilt) {
+          await startGlassesApp(bridge);
+        }
+      })();
     },
     onEvent: (payload) => {
       const et = payload.eventType;
@@ -824,9 +837,15 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
 
 /**
  * Switch from credentials page to container main page. Call after session is saved.
+ * If there is no glasses page yet (rebuild fails), cold-start via startGlassesApp so listeners
+ * are not attached without a visible page.
  */
 export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
-  await refreshGlassesMainPageUi(bridge);
+  const rebuilt = await refreshGlassesMainPageUi(bridge);
+  if (!rebuilt) {
+    await startGlassesApp(bridge);
+    return;
+  }
   attachMainPageGlassesHandlers(bridge);
 }
 
