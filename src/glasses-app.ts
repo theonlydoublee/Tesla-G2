@@ -720,7 +720,9 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   glassesHubUnsubscribe?.();
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
     onDoubleClick: () => {
-      bridge.shutDownPageContainer(1);
+      // 0 = immediate exit; 1 = host confirmation dialog and page may stay "active", so a later
+      // createStartUpPageContainer fails with "already active" (see Page Lifecycle guide).
+      bridge.shutDownPageContainer(0);
       markGlassesPageShutDown();
     },
     onForegroundEnter: () => {
@@ -868,7 +870,19 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
       const result = await bridge.createStartUpPageContainer(config);
       const created = StartUpPageCreateResult.normalize(result);
       if (created !== StartUpPageCreateResult.success) {
-        console.error('[Tesla] createStartUpPageContainer failed:', result, created);
+        // Host still has a live container (e.g. prior shutDown(1) left it active): use rebuild only.
+        console.warn('[Tesla] createStartUpPageContainer failed; falling back to rebuild:', result, created);
+        try {
+          const rebuilt = await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
+          if (rebuilt) {
+            clearGlassesPageShutDown();
+            attachMainPageGlassesHandlers(bridge);
+            return;
+          }
+        } catch (rebuildErr) {
+          console.error('[Tesla] rebuildPageContainer fallback failed:', rebuildErr);
+        }
+        console.error('[Tesla] glasses startup failed after create + rebuild');
         return;
       }
       clearGlassesPageShutDown();
