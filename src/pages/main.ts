@@ -25,6 +25,8 @@ export interface TeslaVehicleDataResponse {
   display_name?: string | null;
   climate_state?: {
     is_climate_on?: boolean | null;
+    /** Cabin temperature from API (Celsius); shown on glasses as °F. */
+    inside_temp?: number | null;
   } | null;
   charge_state?: {
     battery_level?: number | null;
@@ -58,8 +60,8 @@ export function buildVehicleAsleepMainText(displayName: string): string {
 function formatDriveState(shiftState: string | null | undefined): string {
   if (shiftState == null || shiftState === '') return 'Parked';
   switch (shiftState) {
-    case 'D': return 'Drive';
-    case 'R': return 'Reverse';
+    case 'D': return 'Driving';
+    case 'R': return 'Reversing';
     case 'N': return 'Neutral';
     case 'P': return 'Parked';
     default: return shiftState;
@@ -117,6 +119,12 @@ export function buildTextContentFromVehicleData(
     drivingLine,
     climateOn ? 'Climate: On' : 'Climate: Off',
   ];
+
+  const insideTempC = climateState?.inside_temp;
+  if (insideTempC != null && Number.isFinite(Number(insideTempC))) {
+    const insideTempF = Math.round((Number(insideTempC) * 9) / 5 + 32);
+    lines.push(`Inside Temp: ${insideTempF}`);
+  }
 
   if (isCharging && chargeState) {
     const label = chargeState.fast_charger_present ? 'Supercharging' : 'Charging';
