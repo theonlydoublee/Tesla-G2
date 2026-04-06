@@ -21,9 +21,14 @@ import {
   setupGlassesEventHandler,
   isClickEvent,
 } from './utils/events';
-import { buildTextContentFromVehicleData } from './pages/main';
+import {
+  buildTextContentFromVehicleData,
+  buildVehicleAsleepMainText,
+  type TeslaVehicleDataResponse,
+} from './pages/main';
 import {
   CONTROL_ACTIONS,
+  WAKE_ACTION_INDEX,
   CHARGE_ACTION_INDEX,
   CLIMATE_ACTION_INDEX,
   buildConfirmListItemNames,
@@ -87,6 +92,57 @@ const TOGGLE_STATE_REFRESH_DELAY_MS = 2500;
 
 function delayMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const WAKE_POLL_MAX_ATTEMPTS = 35;
+const WAKE_POLL_INTERVAL_MS = 2000;
+
+async function getSelectedVehicleDisplayName(bridge: EvenAppBridge): Promise<string> {
+  const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
+  if (!stored?.trim()) return 'Vehicle';
+  try {
+    const parsed = JSON.parse(stored) as { name?: string };
+    const n = parsed?.name?.trim();
+    return n && n.length > 0 ? n : 'Vehicle';
+  } catch {
+    return 'Vehicle';
+  }
+}
+
+function teslaResponseSuggestsVehicleAsleep(status: number, data: unknown): boolean {
+  if (status === 408) return true;
+  if (!data || typeof data !== 'object') return false;
+  const o = data as Record<string, unknown>;
+  const err = String(o.error ?? '').toLowerCase();
+  const desc = String(o.error_description ?? '').toLowerCase();
+  const reason = String(o.reason ?? '').toLowerCase();
+  const s = `${err} ${desc} ${reason}`;
+  return (
+    s.includes('asleep') ||
+    s.includes('offline') ||
+    (s.includes('vehicle') && s.includes('unavailable')) ||
+    s.includes('could not wake')
+  );
+}
+
+/** Poll vehicle_data until HTTP OK (car responded after wake). */
+async function pollVehicleDataUntilAwake(auth: string, vin: string): Promise<void> {
+  for (let attempt = 0; attempt < WAKE_POLL_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await delayMs(WAKE_POLL_INTERVAL_MS);
+    }
+    try {
+      const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
+        headers: { Authorization: auth },
+      });
+      if (res.ok) {
+        return;
+      }
+    } catch {
+      // retry
+    }
+  }
+  console.warn('[Tesla] vehicle_data did not succeed after wake within expected time');
 }
 
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
@@ -336,12 +392,21 @@ async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<stri
     const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
       headers: { Authorization: auth },
     });
-    const data = await res.json();
+    let data: unknown = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
     if (!res.ok) {
       await clearVehicleSnapshot(bridge);
+      const asleepLabel = storedDisplayName?.trim() || 'Vehicle';
+      if (teslaResponseSuggestsVehicleAsleep(res.status, data)) {
+        return finalize(buildVehicleAsleepMainText(asleepLabel));
+      }
       return finalize(FALLBACK_TEXT);
     }
-    const vehicleData = data?.response ?? data;
+    const vehicleData = ((data as { response?: unknown })?.response ?? data) as TeslaVehicleDataResponse;
     await persistVehicleSnapshot(bridge, vehicleData);
     return finalize(buildTextContentFromVehicleData(vehicleData, storedDisplayName));
   } catch {
@@ -551,7 +616,7 @@ export function buildContainerRebuildPage(textContent: string) {
 }
 
 /**
- * Execute Tesla command for the given CONTROL_ACTIONS index (0..7).
+ * Execute Tesla command for the given CONTROL_ACTIONS index.
  */
 async function executeControlCommand(bridge: EvenAppBridge, index: number): Promise<void> {
   const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
@@ -597,10 +662,11 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   if (!action) return;
 
   const refreshTextAfterCommand =
+    index === WAKE_ACTION_INDEX ||
     index === CHARGE_ACTION_INDEX ||
     index === CLIMATE_ACTION_INDEX ||
-    action.id === "lock" ||
-    action.id === "unlock";
+    action.id === 'lock' ||
+    action.id === 'unlock';
 
   let command = action.command;
   let body = action.body;
@@ -666,6 +732,8 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     toggleCommandSucceeded = res.ok;
     if (!res.ok) {
       console.warn('[Tesla] Command HTTP error:', command, res.status);
+    } else if (index === WAKE_ACTION_INDEX && vin) {
+      await pollVehicleDataUntilAwake(auth, vin);
     }
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
@@ -784,9 +852,13 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
         if (row === CONFIRM_ROW_CONFIRM) {
           const actionIndex = glassesMainUiMode.actionIndex;
           const firstRowLabel = glassesMainUiMode.firstRowLabel;
-          const sendingLabel = sendingStatusLabelForAction(actionIndex, firstRowLabel);
-          glassesMainUiMode = { type: 'confirm_sending', sendingLabel };
           void (async () => {
+            let sendingLabel = sendingStatusLabelForAction(actionIndex, firstRowLabel);
+            if (actionIndex === WAKE_ACTION_INDEX) {
+              const dn = await getSelectedVehicleDisplayName(bridge);
+              sendingLabel = `Waking ${dn}`;
+            }
+            glassesMainUiMode = { type: 'confirm_sending', sendingLabel };
             try {
               await bridge.rebuildPageContainer(
                 new RebuildPageContainer(buildConfirmSendingPageConfig(sendingLabel)),

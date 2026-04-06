@@ -49,6 +49,12 @@ export interface TeslaVehicleDataResponse {
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
 
+/** Shown on glasses when vehicle_data returns asleep / offline (e.g. HTTP 408). */
+export function buildVehicleAsleepMainText(displayName: string): string {
+  const name = displayName?.trim() || 'Vehicle';
+  return `${name} is asleep.\nSend wake command`;
+}
+
 function formatDriveState(shiftState: string | null | undefined): string {
   if (shiftState == null || shiftState === '') return 'Parked';
   switch (shiftState) {

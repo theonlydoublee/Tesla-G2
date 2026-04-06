@@ -1,6 +1,6 @@
 /**
  * Tesla controls: action definitions and icon mapping.
- * Single source of truth for the 8 glasses control actions.
+ * Single source of truth for the glasses control actions.
  */
 
 export interface ControlAction {
@@ -16,15 +16,26 @@ export interface ControlAction {
   body?: Record<string, unknown>;
 }
 
+/** Wake is first list row (confirm + wake_up command). */
+export const WAKE_ACTION_INDEX = 0;
+
 /** Climate is a toggle - determined at runtime from vehicle_data. */
-export const CLIMATE_ACTION_INDEX = 4;
+export const CLIMATE_ACTION_INDEX = 5;
 
 /** Charge is a toggle - determined at runtime from vehicle_data. */
-export const CHARGE_ACTION_INDEX = 5;
+export const CHARGE_ACTION_INDEX = 6;
 
 const CONFIRM_SUFFIX = ['Confirm', 'Cancel'] as const;
 
 export const CONTROL_ACTIONS: ControlAction[] = [
+  {
+    id: 'wake',
+    icon: '/icons/Climate.png',
+    glassesListLabel: 'Wake',
+    confirmPromptLabel: 'Wake vehicle:',
+    sendingStatusLabel: 'Waking vehicle',
+    command: 'wake_up',
+  },
   {
     id: 'lock',
     icon: '/icons/Lock.png',
@@ -114,6 +125,9 @@ export function buildConfirmListItemNames(actionIndex: number, firstRowLabel?: s
 
 /** Status line after user taps Confirm (charge/climate from current `firstRowLabel`). */
 export function sendingStatusLabelForAction(actionIndex: number, firstRowLabel: string): string {
+  if (actionIndex === WAKE_ACTION_INDEX) {
+    return 'Waking vehicle';
+  }
   if (actionIndex === CHARGE_ACTION_INDEX) {
     return firstRowLabel.startsWith('Stop') ? 'Stopping charge' : 'Starting charge';
   }

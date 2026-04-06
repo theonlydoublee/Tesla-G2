@@ -251,6 +251,7 @@ app.get('/api/tesla/check-virtual-key', async (req, res) => {
 
 // Tesla Fleet API command proxy - vehicle commands (lock, unlock, frunk, etc.)
 const ALLOWED_COMMANDS = new Set([
+  'wake_up',
   'door_lock',
   'door_unlock',
   'actuate_trunk',
