@@ -125,6 +125,31 @@ function teslaResponseSuggestsVehicleAsleep(status: number, data: unknown): bool
   );
 }
 
+/**
+ * True when vehicle_data already returns live data (main page would load normally).
+ * In that case Wake should not call wake_up — same UX (confirm → sending → main) but only refresh.
+ */
+async function vehicleAlreadyAwakeForWake(auth: string, vin: string): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl(`/api/tesla/vehicle_data/${vin}`), {
+      headers: { Authorization: auth },
+    });
+    if (!res.ok) return false;
+    let data: unknown = {};
+    try {
+      data = await res.json();
+    } catch {
+      return false;
+    }
+    const vehicle = (data as { response?: unknown })?.response ?? data;
+    if (!vehicle || typeof vehicle !== 'object') return false;
+    const v = vehicle as Record<string, unknown>;
+    return v.charge_state != null || v.climate_state != null || v.vehicle_state != null;
+  } catch {
+    return false;
+  }
+}
+
 /** Poll vehicle_data until HTTP OK (car responded after wake). */
 async function pollVehicleDataUntilAwake(auth: string, vin: string): Promise<void> {
   for (let attempt = 0; attempt < WAKE_POLL_MAX_ATTEMPTS; attempt++) {
@@ -720,20 +745,41 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
 
   let toggleCommandSucceeded = false;
   try {
-    const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
-    const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
-      method: 'POST',
-      headers: {
-        Authorization: auth,
-        'Content-Type': 'application/json',
-      },
-      body: reqBody ? JSON.stringify(reqBody) : undefined,
-    });
-    toggleCommandSucceeded = res.ok;
-    if (!res.ok) {
-      console.warn('[Tesla] Command HTTP error:', command, res.status);
-    } else if (index === WAKE_ACTION_INDEX && vin) {
-      await pollVehicleDataUntilAwake(auth, vin);
+    if (index === WAKE_ACTION_INDEX && vin) {
+      const alreadyAwake = await vehicleAlreadyAwakeForWake(auth, vin);
+      if (alreadyAwake) {
+        toggleCommandSucceeded = true;
+      } else {
+        const reqBody = vin ? { vin } : undefined;
+        const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
+          method: 'POST',
+          headers: {
+            Authorization: auth,
+            'Content-Type': 'application/json',
+          },
+          body: reqBody ? JSON.stringify(reqBody) : undefined,
+        });
+        toggleCommandSucceeded = res.ok;
+        if (!res.ok) {
+          console.warn('[Tesla] Command HTTP error:', command, res.status);
+        } else {
+          await pollVehicleDataUntilAwake(auth, vin);
+        }
+      }
+    } else {
+      const reqBody = body ? { ...body, vin } : vin ? { vin } : undefined;
+      const res = await fetch(apiUrl(`/api/tesla/command/${vehicleId}/${command}`), {
+        method: 'POST',
+        headers: {
+          Authorization: auth,
+          'Content-Type': 'application/json',
+        },
+        body: reqBody ? JSON.stringify(reqBody) : undefined,
+      });
+      toggleCommandSucceeded = res.ok;
+      if (!res.ok) {
+        console.warn('[Tesla] Command HTTP error:', command, res.status);
+      }
     }
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
