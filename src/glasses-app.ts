@@ -796,7 +796,9 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
 }
 
 /**
- * Rebuild main command UI from cache (resets to main layout; no vehicle_data fetch).
+ * Rebuild main command UI from last-written main text cache (resets to main layout).
+ * Callers that need live drive/lock/battery lines must run refreshMainPageTextFromTesla first
+ * (or await startGlassesApp while it is in flight).
  * @returns whether the host reported rebuild success (false if no active page container).
  */
 async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<boolean> {
@@ -822,6 +824,7 @@ async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number):
     const toggled = await firstRowLabelForToggleAction(bridge, actionIndex);
     if (toggled == null) {
       console.warn('[Tesla] Could not load vehicle state for confirm sheet.');
+      await refreshMainPageTextFromTesla(bridge);
       await refreshGlassesMainPageUi(bridge);
       return;
     }
@@ -866,6 +869,11 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       }
       resetGlassesMainUiMode();
       void (async () => {
+        if (startGlassesAppMutex) {
+          await startGlassesAppMutex;
+        } else {
+          await refreshMainPageTextFromTesla(bridge);
+        }
         const rebuilt = await refreshGlassesMainPageUi(bridge);
         if (!rebuilt) {
           await startGlassesApp(bridge);
@@ -926,6 +934,7 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
             } catch (err) {
               console.warn('[Tesla] Canceling-state rebuild failed:', err);
             }
+            await refreshMainPageTextFromTesla(bridge);
             await refreshGlassesMainPageUi(bridge);
           })();
         }
@@ -959,6 +968,11 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
  * are not attached without a visible page.
  */
 export async function switchToMainPage(bridge: EvenAppBridge): Promise<void> {
+  if (startGlassesAppMutex) {
+    await startGlassesAppMutex;
+  } else {
+    await refreshMainPageTextFromTesla(bridge);
+  }
   const rebuilt = await refreshGlassesMainPageUi(bridge);
   if (!rebuilt) {
     await startGlassesApp(bridge);
