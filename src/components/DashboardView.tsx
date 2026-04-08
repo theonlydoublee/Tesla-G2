@@ -449,8 +449,8 @@ export function DashboardView({
               {virtualKeyCheckLoading
                 ? 'Checking…'
                 : virtualKeyAdded === false
-                  ? 'Check virtual key again'
-                  : 'Check virtual key status'}
+                  ? 'Check Virtual Key'
+                  : 'Check Virtual Key'}
             </Button>
           </div>
         )}
