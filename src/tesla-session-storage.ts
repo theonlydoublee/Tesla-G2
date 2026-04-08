@@ -6,3 +6,6 @@ export const STORAGE_KEY_FLEET_REGION = 'tesla_fleet_region';
 
 /** Mirror of resolved Fleet API origin for this session. */
 export const STORAGE_KEY_FLEET_API_BASE = 'tesla_fleet_api_base';
+
+/** JSON `{ "order": string[] }` — enabled glasses command ids in display order (`ControlAction.id`). */
+export const STORAGE_KEY_GLASSES_COMMAND_ORDER = 'tesla_glasses_command_order';

@@ -17,6 +17,7 @@ import {
 
 import { apiUrl } from './api-base';
 import { STORAGE_KEY_SESSION_ID } from './tesla-session-storage';
+import { readVisibleControlActions } from './command-layout';
 import {
   setupGlassesEventHandler,
   isClickEvent,
@@ -28,9 +29,7 @@ import {
 } from './pages/main';
 import {
   CONTROL_ACTIONS,
-  WAKE_ACTION_INDEX,
-  CHARGE_ACTION_INDEX,
-  CLIMATE_ACTION_INDEX,
+  type ControlAction,
   buildConfirmListItemNames,
   buildGlassesListItemNames,
   sendingStatusLabelForAction,
@@ -223,11 +222,14 @@ async function readVehicleSnapshot(bridge: EvenAppBridge): Promise<GlassesVehicl
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
 
+/** Matches the last-built main command list (for row resolution; bridge localStorage is async). */
+let mainListVisibleActionsCache: ControlAction[] = [...CONTROL_ACTIONS];
+
 type GlassesMainUiMode =
   | { type: 'main' }
   /** One-row "Loading..." while fetching toggle labels; absorbs duplicate main-list indices. */
-  | { type: 'confirm_loading'; actionIndex: number }
-  | { type: 'confirm'; actionIndex: number; firstRowLabel: string }
+  | { type: 'confirm_loading'; action: ControlAction }
+  | { type: 'confirm'; action: ControlAction; firstRowLabel: string }
   | { type: 'confirm_sending'; sendingLabel: string }
   /** Dismissing confirm: blocks duplicate list events (Cancel row index === main-list frunk index, etc.). */
   | { type: 'confirm_canceling' };
@@ -317,26 +319,26 @@ async function fetchVehicleDataPayload(
 
 async function firstRowLabelForToggleAction(
   bridge: EvenAppBridge,
-  actionIndex: number,
+  action: ControlAction,
 ): Promise<string | null> {
   const snap = await readVehicleSnapshot(bridge);
   if (snap) {
-    if (actionIndex === CHARGE_ACTION_INDEX) {
+    if (action.id === 'charge') {
       return snap.chargingActive ? 'Stop Charging:' : 'Start Charging:';
     }
-    if (actionIndex === CLIMATE_ACTION_INDEX) {
+    if (action.id === 'climate') {
       return snap.climateOn ? 'Turn Off Climate:' : 'Turn On Climate:';
     }
   }
   const payload = await fetchVehicleDataPayload(bridge);
   if (!payload) return null;
-  if (actionIndex === CHARGE_ACTION_INDEX) {
+  if (action.id === 'charge') {
     const chargeState = payload.charge_state as { charging_state?: string } | undefined;
     const charging =
       chargeState?.charging_state === 'Charging' || chargeState?.charging_state === 'Starting';
     return charging ? 'Stop Charging:' : 'Start Charging:';
   }
-  if (actionIndex === CLIMATE_ACTION_INDEX) {
+  if (action.id === 'climate') {
     const climateState = payload.climate_state as { is_climate_on?: boolean } | undefined;
     const on = climateState?.is_climate_on === true;
     return on ? 'Turn Off Climate:' : 'Turn On Climate:';
@@ -452,9 +454,9 @@ async function getCachedMainPageText(bridge: EvenAppBridge): Promise<string> {
  * Main page: list (left third, event capture) + vehicle text (right two-thirds).
  * @see https://hub.evenrealities.com/docs/guides/display
  */
-function buildContainerMainPageConfig(textContent: string) {
+function buildContainerMainPageConfig(textContent: string, visibleActions: ControlAction[]) {
   const clipped = clipTextForCreatePage(textContent);
-  const itemNames = buildGlassesListItemNames();
+  const itemNames = buildGlassesListItemNames(visibleActions);
 
   const listContainer = new ListContainerProperty({
     xPosition: 0,
@@ -469,7 +471,7 @@ function buildContainerMainPageConfig(textContent: string) {
     containerName: CMD_LIST_NAME,
     isEventCapture: 1,
     itemContainer: new ListItemContainerProperty({
-      itemCount: CONTROL_ACTIONS.length,
+      itemCount: visibleActions.length,
       itemName: itemNames,
     }),
   });
@@ -500,8 +502,8 @@ function buildContainerMainPageConfig(textContent: string) {
  * Confirm UI: single centered list (per-action prompt row + Confirm / Cancel).
  * @see https://hub.evenrealities.com/docs/guides/display
  */
-function buildConfirmPageConfig(actionIndex: number, firstRowLabel: string) {
-  const confirmNames = buildConfirmListItemNames(actionIndex, firstRowLabel);
+function buildConfirmPageConfig(action: ControlAction, firstRowLabel: string) {
+  const confirmNames = buildConfirmListItemNames(action, firstRowLabel);
   const listX = Math.floor((CANVAS_WIDTH - CONFIRM_LIST_WIDTH) / 2);
   const listY = Math.floor((CANVAS_HEIGHT - CONFIRM_LIST_HEIGHT) / 2);
 
@@ -559,13 +561,14 @@ function buildConfirmSendingPageConfig(sendingLabel: string) {
 
 /**
  * Map listEvent to row index for main command list.
- * G2 quirk: host may omit index/name for row 0 — defaultToFirstRowOnEmpty maps empty to row 0 (Lock).
+ * G2 quirk: host may omit index/name for row 0 — defaultToFirstRowOnEmpty maps empty to row 0 (first row).
  */
 function resolveMainListRowIndex(
   listEvent: object,
+  mainListItemNames: string[],
   options: { defaultToFirstRowOnEmpty?: boolean } = {},
 ): number | null {
-  const names = buildGlassesListItemNames();
+  const names = mainListItemNames;
   const n = names.length;
 
   const idx = readNumber(
@@ -603,10 +606,10 @@ function resolveMainListRowIndex(
  */
 function resolveConfirmListRowIndex(
   listEvent: object,
-  actionIndex: number,
+  action: ControlAction,
   firstRowLabel: string,
 ): number | null {
-  const names = buildConfirmListItemNames(actionIndex, firstRowLabel);
+  const names = buildConfirmListItemNames(action, firstRowLabel);
   const n = names.length;
 
   const idx = readNumber(
@@ -635,14 +638,19 @@ function resolveConfirmListRowIndex(
   return CONFIRM_ROW_PROMPT;
 }
 
-export function buildContainerRebuildPage(textContent: string) {
-  return new RebuildPageContainer(buildContainerMainPageConfig(textContent));
+export async function buildContainerRebuildPage(
+  bridge: EvenAppBridge,
+  textContent: string,
+): Promise<RebuildPageContainer> {
+  const visible = await readVisibleControlActions(bridge);
+  mainListVisibleActionsCache = visible;
+  return new RebuildPageContainer(buildContainerMainPageConfig(textContent, visible));
 }
 
 /**
- * Execute Tesla command for the given CONTROL_ACTIONS index.
+ * Execute Tesla command for the given control action.
  */
-async function executeControlCommand(bridge: EvenAppBridge, index: number): Promise<void> {
+async function executeControlCommand(bridge: EvenAppBridge, action: ControlAction): Promise<void> {
   const sessionId = await bridge.getLocalStorage(STORAGE_KEY_SESSION_ID);
   const stored = await bridge.getLocalStorage(STORAGE_KEY_SELECTED_VEHICLE);
   if (!sessionId?.trim() || !stored) return;
@@ -682,20 +690,17 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     return;
   }
 
-  const action = CONTROL_ACTIONS[index];
-  if (!action) return;
-
   const refreshTextAfterCommand =
-    index === WAKE_ACTION_INDEX ||
-    index === CHARGE_ACTION_INDEX ||
-    index === CLIMATE_ACTION_INDEX ||
+    action.id === 'wake' ||
+    action.id === 'charge' ||
+    action.id === 'climate' ||
     action.id === 'lock' ||
     action.id === 'unlock';
 
   let command = action.command;
   let body = action.body;
 
-  if (index === CHARGE_ACTION_INDEX) {
+  if (action.id === 'charge') {
     const snapCharge = await readVehicleSnapshot(bridge);
     if (snapCharge) {
       command = snapCharge.chargingActive ? 'charge_stop' : 'charge_start';
@@ -719,7 +724,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
     }
   }
 
-  if (index === CLIMATE_ACTION_INDEX) {
+  if (action.id === 'climate') {
     const snapClimate = await readVehicleSnapshot(bridge);
     if (snapClimate) {
       command = snapClimate.climateOn ? 'auto_conditioning_stop' : 'auto_conditioning_start';
@@ -744,7 +749,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
 
   let toggleCommandSucceeded = false;
   try {
-    if (index === WAKE_ACTION_INDEX && vin) {
+    if (action.id === 'wake' && vin) {
       const alreadyAwake = await vehicleAlreadyAwakeForWake(auth, vin);
       if (alreadyAwake) {
         toggleCommandSucceeded = true;
@@ -783,7 +788,7 @@ async function executeControlCommand(bridge: EvenAppBridge, index: number): Prom
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
   } finally {
-    const isChargeOrClimate = index === CHARGE_ACTION_INDEX || index === CLIMATE_ACTION_INDEX;
+    const isChargeOrClimate = action.id === 'charge' || action.id === 'climate';
     if (refreshTextAfterCommand) {
       if (isChargeOrClimate && toggleCommandSucceeded) {
         await delayMs(TOGGLE_STATE_REFRESH_DELAY_MS);
@@ -804,7 +809,8 @@ async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<boolean>
   resetGlassesMainUiMode();
   const textContent = await getCachedMainPageText(bridge);
   try {
-    return await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
+    const container = await buildContainerRebuildPage(bridge, textContent);
+    return await bridge.rebuildPageContainer(container);
   } catch (err) {
     console.warn('[Tesla] rebuildPageContainer failed:', err);
     return false;
@@ -815,12 +821,11 @@ async function refreshGlassesMainPageUi(bridge: EvenAppBridge): Promise<boolean>
  * Confirm uses rebuildPageContainer only. createStartUpPageContainer is for app launch and is
  * much slower on hardware; rebuild matches Cancel/Confirm return path and feels instant.
  */
-async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number): Promise<void> {
-  let firstRowLabel =
-    CONTROL_ACTIONS[actionIndex]?.confirmPromptLabel?.trim() || 'Action:';
+async function showConfirmForAction(bridge: EvenAppBridge, action: ControlAction): Promise<void> {
+  let firstRowLabel = action.confirmPromptLabel?.trim() || 'Action:';
 
-  if (actionIndex === CHARGE_ACTION_INDEX || actionIndex === CLIMATE_ACTION_INDEX) {
-    const toggled = await firstRowLabelForToggleAction(bridge, actionIndex);
+  if (action.id === 'charge' || action.id === 'climate') {
+    const toggled = await firstRowLabelForToggleAction(bridge, action);
     if (toggled == null) {
       console.warn('[Tesla] Could not load vehicle state for confirm sheet.');
       await refreshMainPageTextFromTesla(bridge);
@@ -830,9 +835,9 @@ async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number):
     firstRowLabel = toggled;
   }
 
-  glassesMainUiMode = { type: 'confirm', actionIndex, firstRowLabel };
+  glassesMainUiMode = { type: 'confirm', action, firstRowLabel };
   await bridge.rebuildPageContainer(
-    new RebuildPageContainer(buildConfirmPageConfig(actionIndex, firstRowLabel)),
+    new RebuildPageContainer(buildConfirmPageConfig(action, firstRowLabel)),
   );
 }
 
@@ -892,10 +897,10 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
       }
 
       if (glassesMainUiMode.type === 'confirm') {
-        const pending = glassesMainUiMode.actionIndex;
+        const pendingAction = glassesMainUiMode.action;
         const row = resolveConfirmListRowIndex(
           payload.listEvent,
-          pending,
+          pendingAction,
           glassesMainUiMode.firstRowLabel,
         );
         if (row == null) return;
@@ -903,11 +908,11 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
           return;
         }
         if (row === CONFIRM_ROW_CONFIRM) {
-          const actionIndex = glassesMainUiMode.actionIndex;
+          const action = glassesMainUiMode.action;
           const firstRowLabel = glassesMainUiMode.firstRowLabel;
           void (async () => {
-            let sendingLabel = sendingStatusLabelForAction(actionIndex, firstRowLabel);
-            if (actionIndex === WAKE_ACTION_INDEX) {
+            let sendingLabel = sendingStatusLabelForAction(action, firstRowLabel);
+            if (action.id === 'wake') {
               const dn = await getSelectedVehicleDisplayName(bridge);
               sendingLabel = `Waking ${dn}`;
             }
@@ -919,7 +924,7 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
             } catch (err) {
               console.warn('[Tesla] Sending-state rebuild failed:', err);
             }
-            void executeControlCommand(bridge, actionIndex);
+            void executeControlCommand(bridge, action);
           })();
           return;
         }
@@ -940,13 +945,15 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
         return;
       }
 
-      const row = resolveMainListRowIndex(payload.listEvent, {
+      const mainNames = buildGlassesListItemNames(mainListVisibleActionsCache);
+      const row = resolveMainListRowIndex(payload.listEvent, mainNames, {
         defaultToFirstRowOnEmpty: true,
       });
       if (row == null) return;
-      if (row < 0 || row >= CONTROL_ACTIONS.length) return;
-      const actionIndex = row;
-      glassesMainUiMode = { type: 'confirm_loading', actionIndex };
+      if (row < 0 || row >= mainListVisibleActionsCache.length) return;
+      const action = mainListVisibleActionsCache[row];
+      if (!action) return;
+      glassesMainUiMode = { type: 'confirm_loading', action };
       void (async () => {
         try {
           await bridge.rebuildPageContainer(
@@ -955,7 +962,7 @@ function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
         } catch (err) {
           console.warn('[Tesla] Confirm loading rebuild failed:', err);
         }
-        await showConfirmForAction(bridge, actionIndex);
+        await showConfirmForAction(bridge, action);
       })();
     },
   });
@@ -1016,14 +1023,17 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
     try {
       resetGlassesMainUiMode();
       const textContent = await refreshMainPageTextFromTesla(bridge);
-      const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent));
+      const visible = await readVisibleControlActions(bridge);
+      mainListVisibleActionsCache = visible;
+      const config = new CreateStartUpPageContainer(buildContainerMainPageConfig(textContent, visible));
       const result = await bridge.createStartUpPageContainer(config);
       const created = StartUpPageCreateResult.normalize(result);
       if (created !== StartUpPageCreateResult.success) {
         // Host still has a live container (e.g. prior shutDown(1) left it active): use rebuild only.
         console.warn('[Tesla] createStartUpPageContainer failed; falling back to rebuild:', result, created);
         try {
-          const rebuilt = await bridge.rebuildPageContainer(buildContainerRebuildPage(textContent));
+          const rebuildContainer = await buildContainerRebuildPage(bridge, textContent);
+          const rebuilt = await bridge.rebuildPageContainer(rebuildContainer);
           if (rebuilt) {
             clearGlassesPageShutDown();
             attachMainPageGlassesHandlers(bridge);

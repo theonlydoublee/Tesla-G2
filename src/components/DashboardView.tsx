@@ -13,7 +13,15 @@ import {
   STORAGE_KEY_SESSION_ID,
   STORAGE_KEY_FLEET_REGION,
   STORAGE_KEY_FLEET_API_BASE,
+  STORAGE_KEY_GLASSES_COMMAND_ORDER,
 } from '../tesla-session-storage';
+import { CONTROL_ACTIONS } from '../controls-config';
+import {
+  parseStoredCommandOrderJson,
+  serializeCommandOrder,
+  getDefaultCommandOrderIds,
+  WAKE_COMMAND_ID,
+} from '../command-layout';
 import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
@@ -77,6 +85,8 @@ export function DashboardView({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [virtualKeyAdded, setVirtualKeyAdded] = useState<boolean | null>(null);
   const [virtualKeyCheckLoading, setVirtualKeyCheckLoading] = useState(false);
+  const [commandOrderIds, setCommandOrderIds] = useState<string[]>(() => getDefaultCommandOrderIds());
+  const [commandSaveStatus, setCommandSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   function authHeader(): string {
     return `Bearer ${sessionId}`;
@@ -192,6 +202,18 @@ export function DashboardView({
     setVirtualKeyAdded(null);
   }, [selectedVehicle?.id, selectedVehicle?.vin]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const raw = await bridge.getLocalStorage(STORAGE_KEY_GLASSES_COMMAND_ORDER);
+      if (cancelled) return;
+      setCommandOrderIds(parseStoredCommandOrderJson(raw));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+
   async function checkVirtualKeyNow() {
     if (!selectedVehicle || needsReauth || !sessionId) return;
     setVirtualKeyCheckLoading(true);
@@ -234,6 +256,59 @@ export function DashboardView({
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 2000);
     }
+  }
+
+  function actionForCommandId(id: string) {
+    return CONTROL_ACTIONS.find((a) => a.id === id);
+  }
+
+  function moveCommandUp(index: number) {
+    if (index <= 0) return;
+    setCommandOrderIds((prev) => {
+      const next = [...prev];
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      return next;
+    });
+  }
+
+  function moveCommandDown(index: number) {
+    setCommandOrderIds((prev) => {
+      if (index >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      return next;
+    });
+  }
+
+  function hideCommand(id: string) {
+    if (id === WAKE_COMMAND_ID) return;
+    setCommandOrderIds((prev) => prev.filter((x) => x !== id));
+  }
+
+  function showCommand(id: string) {
+    setCommandOrderIds((prev) => {
+      if (prev.includes(id)) return prev;
+      return [...prev, id];
+    });
+  }
+
+  async function handleSaveCommandsToGlasses() {
+    if (needsReauth) return;
+    setCommandSaveStatus('loading');
+    try {
+      const payload = serializeCommandOrder(commandOrderIds);
+      await bridge.setLocalStorage(STORAGE_KEY_GLASSES_COMMAND_ORDER, payload);
+      await switchToMainPage(bridge);
+      setCommandSaveStatus('success');
+      setTimeout(() => setCommandSaveStatus('idle'), 2000);
+    } catch {
+      setCommandSaveStatus('error');
+      setTimeout(() => setCommandSaveStatus('idle'), 2000);
+    }
+  }
+
+  function handleRestoreDefaultCommands() {
+    setCommandOrderIds(getDefaultCommandOrderIds());
   }
 
   async function handleTestApi() {
@@ -413,6 +488,126 @@ export function DashboardView({
             {reAuthError}
           </Text>
         )}
+
+        <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
+          Glasses commands
+        </Text>
+        <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
+          Choose which actions appear on the glasses list and their order. Wake stays available when the car is asleep and
+          cannot be removed.
+        </Text>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {commandOrderIds.map((id, index) => {
+            const action = actionForCommandId(id);
+            if (!action) return null;
+            const isWake = id === WAKE_COMMAND_ID;
+            return (
+              <div
+                key={id}
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: 8,
+                  borderRadius: 8,
+                  backgroundColor: 'var(--color-bc-1st)',
+                }}
+              >
+                <Text variant="body-2" style={{ flex: '1 1 120px', minWidth: 0 }}>
+                  {action.glassesListLabel}
+                  {isWake ? ' (always on)' : ''}
+                </Text>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => moveCommandUp(index)}
+                  disabled={index === 0 || needsReauth}
+                  style={{ flexShrink: 0, padding: '6px 10px' }}
+                >
+                  Up
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => moveCommandDown(index)}
+                  disabled={index >= commandOrderIds.length - 1 || needsReauth}
+                  style={{ flexShrink: 0, padding: '6px 10px' }}
+                >
+                  Down
+                </Button>
+                <Button
+                  type="button"
+                  variant="accent"
+                  onClick={() => hideCommand(id)}
+                  disabled={isWake || needsReauth}
+                  style={{ flexShrink: 0, padding: '6px 10px' }}
+                >
+                  Hide
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+        {CONTROL_ACTIONS.some((a) => !commandOrderIds.includes(a.id)) && (
+          <div style={{ marginBottom: 12 }}>
+            <Text variant="subtitle" style={{ marginBottom: 6, display: 'block' }}>
+              Hidden
+            </Text>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {CONTROL_ACTIONS.filter((a) => !commandOrderIds.includes(a.id)).map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: 8,
+                    borderRadius: 8,
+                    backgroundColor: 'var(--color-bc-accent)',
+                  }}
+                >
+                  <Text variant="body-2">{a.glassesListLabel}</Text>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => showCommand(a.id)}
+                    disabled={needsReauth}
+                    style={{ flexShrink: 0, marginLeft: 8 }}
+                  >
+                    Show
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleSaveCommandsToGlasses()}
+            disabled={commandSaveStatus === 'loading' || needsReauth}
+            style={{ width: '100%' }}
+          >
+            {commandSaveStatus === 'loading'
+              ? 'Saving…'
+              : commandSaveStatus === 'success'
+                ? 'Saved to glasses'
+                : commandSaveStatus === 'error'
+                  ? 'Save failed'
+                  : 'Save command list to glasses'}
+          </Button>
+          <Button
+            type="button"
+            variant="accent"
+            onClick={handleRestoreDefaultCommands}
+            disabled={needsReauth}
+            style={{ width: '100%' }}
+          >
+            Restore default commands
+          </Button>
+        </div>
 
         <Text
           variant="title-1"

@@ -16,15 +16,6 @@ export interface ControlAction {
   body?: Record<string, unknown>;
 }
 
-/** Wake is first list row (confirm + wake_up command). */
-export const WAKE_ACTION_INDEX = 0;
-
-/** Climate is a toggle - determined at runtime from vehicle_data. */
-export const CLIMATE_ACTION_INDEX = 5;
-
-/** Charge is a toggle - determined at runtime from vehicle_data. */
-export const CHARGE_ACTION_INDEX = 6;
-
 const CONFIRM_SUFFIX = ['Confirm', 'Cancel'] as const;
 
 export const CONTROL_ACTIONS: ControlAction[] = [
@@ -104,37 +95,35 @@ export const CONTROL_ACTIONS: ControlAction[] = [
 
 export const CONTROL_COUNT = CONTROL_ACTIONS.length;
 
-/** Item names for `ListItemContainerProperty.itemName` (same order as CONTROL_ACTIONS). */
-export function buildGlassesListItemNames(): string[] {
-  return CONTROL_ACTIONS.map((a) => a.glassesListLabel);
+/** Item names for main list (same order as `visibleActions`). */
+export function buildGlassesListItemNames(visibleActions: ControlAction[]): string[] {
+  return visibleActions.map((a) => a.glassesListLabel);
 }
 
 /**
  * Confirm list rows: prompt (static or precomputed for charge/climate), then Confirm / Cancel.
  * When `firstRowLabel` is set (e.g. from vehicle_data), it overrides `confirmPromptLabel`.
  */
-export function buildConfirmListItemNames(actionIndex: number, firstRowLabel?: string): string[] {
+export function buildConfirmListItemNames(action: ControlAction, firstRowLabel?: string): string[] {
   const trimmed = firstRowLabel?.trim();
   if (trimmed) {
     return [trimmed, ...CONFIRM_SUFFIX];
   }
-  const action = CONTROL_ACTIONS[actionIndex];
-  const prompt = action?.confirmPromptLabel?.trim() || 'Action:';
+  const prompt = action.confirmPromptLabel?.trim() || 'Action:';
   return [prompt, ...CONFIRM_SUFFIX];
 }
 
 /** Status line after user taps Confirm (charge/climate from current `firstRowLabel`). */
-export function sendingStatusLabelForAction(actionIndex: number, firstRowLabel: string): string {
-  if (actionIndex === WAKE_ACTION_INDEX) {
+export function sendingStatusLabelForAction(action: ControlAction, firstRowLabel: string): string {
+  if (action.id === 'wake') {
     return 'Waking vehicle';
   }
-  if (actionIndex === CHARGE_ACTION_INDEX) {
+  if (action.id === 'charge') {
     return firstRowLabel.startsWith('Stop') ? 'Stopping charge' : 'Starting charge';
   }
-  if (actionIndex === CLIMATE_ACTION_INDEX) {
+  if (action.id === 'climate') {
     return firstRowLabel.startsWith('Turn Off') ? 'Turning off climate' : 'Turning on climate';
   }
-  const action = CONTROL_ACTIONS[actionIndex];
-  const s = action?.sendingStatusLabel?.trim();
+  const s = action.sendingStatusLabel?.trim();
   return s && s.length > 0 ? s : 'Sending command';
 }
