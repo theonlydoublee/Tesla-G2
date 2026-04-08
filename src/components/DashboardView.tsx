@@ -266,7 +266,11 @@ export function DashboardView({
     if (index <= 0) return;
     setCommandOrderIds((prev) => {
       const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      const above = next[index - 1];
+      const current = next[index];
+      if (above === undefined || current === undefined) return prev;
+      next[index - 1] = current;
+      next[index] = above;
       return next;
     });
   }
@@ -275,7 +279,11 @@ export function DashboardView({
     setCommandOrderIds((prev) => {
       if (index >= prev.length - 1) return prev;
       const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      const current = next[index];
+      const below = next[index + 1];
+      if (current === undefined || below === undefined) return prev;
+      next[index] = below;
+      next[index + 1] = current;
       return next;
     });
   }
@@ -489,126 +497,6 @@ export function DashboardView({
           </Text>
         )}
 
-        <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
-          Glasses commands
-        </Text>
-        <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
-          Choose which actions appear on the glasses list and their order. Wake stays available when the car is asleep and
-          cannot be removed.
-        </Text>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-          {commandOrderIds.map((id, index) => {
-            const action = actionForCommandId(id);
-            if (!action) return null;
-            const isWake = id === WAKE_COMMAND_ID;
-            return (
-              <div
-                key={id}
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: 8,
-                  borderRadius: 8,
-                  backgroundColor: 'var(--color-bc-1st)',
-                }}
-              >
-                <Text variant="body-2" style={{ flex: '1 1 120px', minWidth: 0 }}>
-                  {action.glassesListLabel}
-                  {isWake ? ' (always on)' : ''}
-                </Text>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => moveCommandUp(index)}
-                  disabled={index === 0 || needsReauth}
-                  style={{ flexShrink: 0, padding: '6px 10px' }}
-                >
-                  Up
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => moveCommandDown(index)}
-                  disabled={index >= commandOrderIds.length - 1 || needsReauth}
-                  style={{ flexShrink: 0, padding: '6px 10px' }}
-                >
-                  Down
-                </Button>
-                <Button
-                  type="button"
-                  variant="accent"
-                  onClick={() => hideCommand(id)}
-                  disabled={isWake || needsReauth}
-                  style={{ flexShrink: 0, padding: '6px 10px' }}
-                >
-                  Hide
-                </Button>
-              </div>
-            );
-          })}
-        </div>
-        {CONTROL_ACTIONS.some((a) => !commandOrderIds.includes(a.id)) && (
-          <div style={{ marginBottom: 12 }}>
-            <Text variant="subtitle" style={{ marginBottom: 6, display: 'block' }}>
-              Hidden
-            </Text>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {CONTROL_ACTIONS.filter((a) => !commandOrderIds.includes(a.id)).map((a) => (
-                <div
-                  key={a.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: 8,
-                    borderRadius: 8,
-                    backgroundColor: 'var(--color-bc-accent)',
-                  }}
-                >
-                  <Text variant="body-2">{a.glassesListLabel}</Text>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => showCommand(a.id)}
-                    disabled={needsReauth}
-                    style={{ flexShrink: 0, marginLeft: 8 }}
-                  >
-                    Show
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={() => void handleSaveCommandsToGlasses()}
-            disabled={commandSaveStatus === 'loading' || needsReauth}
-            style={{ width: '100%' }}
-          >
-            {commandSaveStatus === 'loading'
-              ? 'Saving…'
-              : commandSaveStatus === 'success'
-                ? 'Saved to glasses'
-                : commandSaveStatus === 'error'
-                  ? 'Save failed'
-                  : 'Save command list to glasses'}
-          </Button>
-          <Button
-            type="button"
-            variant="accent"
-            onClick={handleRestoreDefaultCommands}
-            disabled={needsReauth}
-            style={{ width: '100%' }}
-          >
-            Restore default commands
-          </Button>
-        </div>
-
         <Text
           variant="title-1"
           style={{
@@ -639,7 +527,7 @@ export function DashboardView({
           </Text>
         )}
         {vehicles && vehicles.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
             {vehicles.map((v) => (
               <div
                 key={v.vin}
@@ -682,6 +570,145 @@ export function DashboardView({
             </Button>
           </div>
         )}
+
+        <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
+          Glasses commands
+        </Text>
+        <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
+          Choose which actions appear on the glasses list and their order. Wake stays available when the car is asleep and
+          cannot be removed.
+        </Text>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {commandOrderIds.map((id, index) => {
+            const action = actionForCommandId(id);
+            if (!action) return null;
+            const isWake = id === WAKE_COMMAND_ID;
+            const rowBg =
+              index % 2 === 0 ? 'var(--color-bc-1st)' : 'var(--color-bc-accent)';
+            return (
+              <div
+                key={id}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 10,
+                  padding: 10,
+                  borderRadius: 8,
+                  backgroundColor: rowBg,
+                }}
+              >
+                <Text variant="body-2" style={{ display: 'block', width: '100%' }}>
+                  {action.glassesListLabel}
+                  {isWake ? ' (always on)' : ''}
+                </Text>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => moveCommandUp(index)}
+                    disabled={index === 0 || needsReauth}
+                    style={{ flex: '1 1 auto', minWidth: '4.5rem', padding: '8px 10px' }}
+                  >
+                    Up
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => moveCommandDown(index)}
+                    disabled={index >= commandOrderIds.length - 1 || needsReauth}
+                    style={{ flex: '1 1 auto', minWidth: '4.5rem', padding: '8px 10px' }}
+                  >
+                    Down
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="accent"
+                    onClick={() => hideCommand(id)}
+                    disabled={isWake || needsReauth}
+                    style={{ flex: '1 1 auto', minWidth: '4.5rem', padding: '8px 10px' }}
+                  >
+                    Hide
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {CONTROL_ACTIONS.some((a) => !commandOrderIds.includes(a.id)) && (
+          <div style={{ marginBottom: 12 }}>
+            <Text variant="subtitle" style={{ marginBottom: 6, display: 'block' }}>
+              Hidden
+            </Text>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {CONTROL_ACTIONS.filter((a) => !commandOrderIds.includes(a.id)).map((a, hiddenIndex) => {
+                const rowBg =
+                  hiddenIndex % 2 === 0 ? 'var(--color-bc-accent)' : 'var(--color-bc-1st)';
+                return (
+                  <div
+                    key={a.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: 8,
+                      backgroundColor: rowBg,
+                    }}
+                  >
+                    <Text variant="body-2" style={{ flex: '1 1 auto', minWidth: 0 }}>
+                      {a.glassesListLabel}
+                    </Text>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => showCommand(a.id)}
+                      disabled={needsReauth}
+                      style={{ flexShrink: 0, padding: '8px 10px' }}
+                    >
+                      Show
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleSaveCommandsToGlasses()}
+            disabled={commandSaveStatus === 'loading' || needsReauth}
+            style={{ width: '100%' }}
+          >
+            {commandSaveStatus === 'loading'
+              ? 'Saving…'
+              : commandSaveStatus === 'success'
+                ? 'Saved to glasses'
+                : commandSaveStatus === 'error'
+                  ? 'Save failed'
+                  : 'Save Commands'}
+          </Button>
+          <Button
+            type="button"
+            variant="accent"
+            onClick={handleRestoreDefaultCommands}
+            disabled={needsReauth}
+            style={{ width: '100%' }}
+          >
+            Restore default commands
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
