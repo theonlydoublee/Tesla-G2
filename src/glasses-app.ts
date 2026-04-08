@@ -841,11 +841,11 @@ async function showConfirmForAction(bridge: EvenAppBridge, actionIndex: number):
 function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   glassesHubUnsubscribe?.();
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
+    // Double-tap exit disabled (no longer needed). Re-enable by restoring the handler body below.
     onDoubleClick: () => {
-      // 1 = normal exit with host confirmation (Page Lifecycle). Still mark shutdown so reopen
-      // cold-starts; create may fall back to rebuild if the page stays active until confirmed.
-      bridge.shutDownPageContainer(1);
-      markGlassesPageShutDown();
+      // Previous behavior (preserved for reference):
+      // bridge.shutDownPageContainer(1);
+      // markGlassesPageShutDown();
     },
     onForegroundEnter: () => {
       if (glassesMainContainerNeedsColdStart || shouldColdStartGlassesFromStorage()) {
@@ -1047,5 +1047,10 @@ export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Pro
   }
 
   glassesHubUnsubscribe?.();
-  glassesHubUnsubscribe = setupGlassesEventHandler(bridge);
+  // Override SDK default double-tap → shutDownPageContainer(1); exit via Hub UI instead.
+  glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
+    onDoubleClick: () => {
+      // Previous: default in events.ts called bridge.shutDownPageContainer(1).
+    },
+  });
 }
