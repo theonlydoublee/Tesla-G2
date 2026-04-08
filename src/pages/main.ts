@@ -51,10 +51,13 @@ export interface TeslaVehicleDataResponse {
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
 
-/** Shown on glasses when vehicle_data returns asleep / offline (e.g. HTTP 408). */
-export function buildVehicleAsleepMainText(displayName: string): string {
-  const name = displayName?.trim() || 'Vehicle';
-  return `${name} is asleep.\nSend wake command`;
+/**
+ * Shown on glasses when vehicle_data indicates the car is asleep or unreachable.
+ * Tesla typically responds with HTTP 408 or error text (asleep / offline / could not wake, etc.);
+ * see teslaResponseSuggestsVehicleAsleep in glasses-app.
+ */
+export function buildVehicleAsleepMainText(): string {
+  return 'Please send wake command to the car to get data and send commands';
 }
 
 function formatDriveState(shiftState: string | null | undefined): string {

@@ -425,9 +425,8 @@ async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<stri
     }
     if (!res.ok) {
       await clearVehicleSnapshot(bridge);
-      const asleepLabel = storedDisplayName?.trim() || 'Vehicle';
       if (teslaResponseSuggestsVehicleAsleep(res.status, data)) {
-        return finalize(buildVehicleAsleepMainText(asleepLabel));
+        return finalize(buildVehicleAsleepMainText());
       }
       return finalize(FALLBACK_TEXT);
     }
