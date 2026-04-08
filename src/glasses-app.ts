@@ -86,7 +86,7 @@ function clipTextForCreatePage(s: string): string {
   return `${s.slice(0, MAX_TEXT_CHARS_CREATE - 2)}\n…`;
 }
 
-/** Tesla vehicle_data often lags charge/climate for a second or two after a successful command. */
+/** Tesla vehicle_data often lags charge/climate/door lock for a second or two after a successful command. */
 const TOGGLE_STATE_REFRESH_DELAY_MS = 2500;
 
 function delayMs(ms: number): Promise<void> {
@@ -173,7 +173,7 @@ const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
 
 /**
  * Cached right-pane status text for glasses main page. Written by refreshMainPageTextFromTesla
- * (startup and after charge/climate commands). Rebuilds use getCachedMainPageText — no network.
+ * (startup and after charge/climate/lock/unlock commands). Rebuilds use getCachedMainPageText — no network.
  * If the user changes the selected vehicle on the phone, text may stay stale until the glasses app starts again.
  */
 const STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE = 'tesla_glasses_main_text_cache';
@@ -359,7 +359,7 @@ function decodeModelFromVin(vin: string): string {
   }
 }
 
-/** Persist status text + vehicle snapshot; return text (startup and after charge/climate toggles). */
+/** Persist status text + vehicle snapshot; return text (startup and after charge/climate/lock/unlock refreshes). */
 async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<string> {
   async function finalize(text: string): Promise<string> {
     await bridge.setLocalStorage(STORAGE_KEY_GLASSES_MAIN_TEXT_CACHE, text);
@@ -788,9 +788,14 @@ async function executeControlCommand(bridge: EvenAppBridge, action: ControlActio
   } catch (err) {
     console.warn('[Tesla] Command failed:', command, err);
   } finally {
-    const isChargeOrClimate = action.id === 'charge' || action.id === 'climate';
+    const needsVehicleStateSettleDelay =
+      toggleCommandSucceeded &&
+      (action.id === 'charge' ||
+        action.id === 'climate' ||
+        action.id === 'lock' ||
+        action.id === 'unlock');
     if (refreshTextAfterCommand) {
-      if (isChargeOrClimate && toggleCommandSucceeded) {
+      if (needsVehicleStateSettleDelay) {
         await delayMs(TOGGLE_STATE_REFRESH_DELAY_MS);
       }
       await refreshMainPageTextFromTesla(bridge);
@@ -801,7 +806,7 @@ async function executeControlCommand(bridge: EvenAppBridge, action: ControlActio
 
 /**
  * Rebuild main command UI from last-written main text cache (resets to main layout).
- * Callers that need live drive/lock/battery lines must run refreshMainPageTextFromTesla first
+ * Callers that need live drive/locked/battery lines must run refreshMainPageTextFromTesla first
  * (or await startGlassesApp while it is in flight).
  * @returns whether the host reported rebuild success (false if no active page container).
  */
