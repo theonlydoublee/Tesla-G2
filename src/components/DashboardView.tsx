@@ -28,8 +28,31 @@ import {
 import { getTeslaRedirectUri } from '../tesla-redirect-uri';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
+const VIRTUAL_KEY_ENROLL_URL = 'https://www.tesla.com/_ak/even.thedevcave.xyz';
 
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
 
 interface TeslaVehicle {
   id?: number;
@@ -483,19 +506,26 @@ export function DashboardView({
               }}
             >
               To add a virtual key, which is required, open{' '}
-              <a
-                href="https://www.tesla.com/_ak/even.thedevcave.xyz"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                aria-label={`Copy ${VIRTUAL_KEY_ENROLL_URL} to clipboard`}
+                onClick={() => void copyTextToClipboard(VIRTUAL_KEY_ENROLL_URL)}
                 style={{
                   color: 'var(--color-tc-accent)',
                   textDecoration: 'underline',
                   overflowWrap: 'anywhere',
                   wordBreak: 'break-word',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  margin: 0,
+                  font: 'inherit',
+                  cursor: 'pointer',
+                  textAlign: 'left',
                 }}
               >
-                https://www.tesla.com/_ak/even.thedevcave.xyz
-              </a>{' '}
+                {VIRTUAL_KEY_ENROLL_URL}
+              </button>{' '}
               in a web browser on your phone with the Tesla app installed.
             </Text>
             <Button
