@@ -15,6 +15,7 @@ import {
   STORAGE_KEY_FLEET_API_BASE,
   STORAGE_KEY_GLASSES_COMMAND_ORDER,
   STORAGE_KEY_DISPLAY_UNITS,
+  STORAGE_KEY_GLASSES_COMMANDS_LIST_VISIBLE,
 } from '../tesla-session-storage';
 import { parseDisplayUnits, type DisplayUnits } from '../display-units';
 import { CONTROL_ACTIONS } from '../controls-config';
@@ -89,6 +90,7 @@ export function DashboardView({
   const [virtualKeyCheckLoading, setVirtualKeyCheckLoading] = useState(false);
   const [commandOrderIds, setCommandOrderIds] = useState<string[]>(() => getDefaultCommandOrderIds());
   const [commandSaveStatus, setCommandSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [glassesCommandsListVisible, setGlassesCommandsListVisible] = useState(true);
   const [displayUnits, setDisplayUnits] = useState<DisplayUnits>('imperial');
   const [unitsSaveStatus, setUnitsSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
@@ -224,6 +226,19 @@ export function DashboardView({
       const raw = await bridge.getLocalStorage(STORAGE_KEY_DISPLAY_UNITS);
       if (cancelled) return;
       setDisplayUnits(parseDisplayUnits(raw));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const raw = await bridge.getLocalStorage(STORAGE_KEY_GLASSES_COMMANDS_LIST_VISIBLE);
+      if (cancelled) return;
+      const visible = raw !== '0' && raw !== 'false';
+      setGlassesCommandsListVisible(visible);
     })();
     return () => {
       cancelled = true;
@@ -424,7 +439,7 @@ export function DashboardView({
   return (
     <Card>
       <CardHeader>
-        <Text variant="title-1">Tesla API</Text>
+        <Text variant="title-1">Tesla Controls</Text>
       </CardHeader>
       <CardContent>
         <div style={{ display: 'flex', flexDirection: 'row', gap: 8, marginBottom: 12 }}>
@@ -457,7 +472,7 @@ export function DashboardView({
 
         {virtualKeyAdded !== true && selectedVehicle && (
           <div style={{ marginBottom: 12 }}>
-            <Text variant="subtitle" style={{ marginBottom: 8, display: 'block' }}>
+            <Text variant="body-2" style={{ marginBottom: 8, display: 'block' }}>
               To add a virtual key, which is required, open{' '}
               <a
                 href="https://www.tesla.com/_ak/even.thedevcave.xyz"
@@ -602,7 +617,7 @@ export function DashboardView({
         )}
 
         <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
-          Display units
+          Display Units
         </Text>
         <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
           Distance and temperature on the glasses main view (miles/km, °F/°C).
@@ -656,12 +671,41 @@ export function DashboardView({
         </div>
 
         <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
-          Glasses commands
+          Glasses Commands List
         </Text>
-        <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
-          Choose which actions appear on the glasses list and their order. Wake stays available when the car is asleep and
-          cannot be removed.
-        </Text>
+        <div style={{ marginBottom: 8 }}>
+          <Text variant="body-2" style={{ opacity: 0.85, display: 'block', marginBottom: 6 }}>
+            Choose which actions appear on the glasses list and their order. Wake stays available when the car is asleep and
+            cannot be removed.
+          </Text>
+          <button
+            type="button"
+            onClick={() => {
+              setGlassesCommandsListVisible((v) => {
+                const next = !v;
+                void bridge.setLocalStorage(
+                  STORAGE_KEY_GLASSES_COMMANDS_LIST_VISIBLE,
+                  next ? '1' : '0',
+                );
+                return next;
+              });
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: 'var(--color-tc-accent)',
+              textDecoration: 'underline',
+              font: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            {glassesCommandsListVisible ? '^ Hide Commands' : '> Show Commands'}
+          </button>
+        </div>
+        {glassesCommandsListVisible && (
+        <>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
           {commandOrderIds.map((id, index) => {
             const action = actionForCommandId(id);
@@ -728,7 +772,7 @@ export function DashboardView({
         </div>
         {CONTROL_ACTIONS.some((a) => !commandOrderIds.includes(a.id)) && (
           <div style={{ marginBottom: 12 }}>
-            <Text variant="subtitle" style={{ marginBottom: 6, display: 'block' }}>
+            <Text variant="body-2" style={{ marginBottom: 6, display: 'block' }}>
               Hidden
             </Text>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -767,6 +811,8 @@ export function DashboardView({
             </div>
           </div>
         )}
+        </>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           <Button
             type="button"
@@ -790,7 +836,7 @@ export function DashboardView({
             disabled={needsReauth}
             style={{ width: '100%' }}
           >
-            Restore default commands
+            Restore Default Commands
           </Button>
         </div>
       </CardContent>

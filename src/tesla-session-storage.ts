@@ -12,3 +12,6 @@ export const STORAGE_KEY_GLASSES_COMMAND_ORDER = 'tesla_glasses_command_order';
 
 /** `imperial` | `metric` — distance/temp display on glasses main pane. */
 export const STORAGE_KEY_DISPLAY_UNITS = 'tesla_display_units';
+
+/** `1` = commands list expanded, `0` = collapsed — dashboard Glasses Commands section. */
+export const STORAGE_KEY_GLASSES_COMMANDS_LIST_VISIBLE = 'tesla_glasses_commands_list_visible';
