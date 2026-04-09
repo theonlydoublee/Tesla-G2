@@ -664,7 +664,7 @@ export function DashboardView({
         )}
 
         <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
-          Display Units
+          Unit Preference
         </Text>
         <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
           Distance and temperature on the glasses main view (miles/km, °F/°C).
@@ -713,7 +713,7 @@ export function DashboardView({
                 ? 'Saved'
                 : unitsSaveStatus === 'error'
                   ? 'Failed'
-                  : 'Save display units'}
+                  : 'Save Unit Preference'}
           </Button>
         </div>
 
