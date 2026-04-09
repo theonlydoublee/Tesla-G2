@@ -441,7 +441,7 @@ export function DashboardView({
       <CardHeader>
         <Text variant="title-1">Tesla Controls</Text>
       </CardHeader>
-      <CardContent>
+      <CardContent style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', flexDirection: 'row', gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Button
@@ -471,14 +471,28 @@ export function DashboardView({
         </div>
 
         {virtualKeyAdded !== true && selectedVehicle && (
-          <div style={{ marginBottom: 12 }}>
-            <Text variant="body-2" style={{ marginBottom: 8, display: 'block' }}>
+          <div style={{ marginBottom: 12, minWidth: 0, maxWidth: '100%' }}>
+            <Text
+              variant="body-2"
+              style={{
+                marginBottom: 8,
+                display: 'block',
+                maxWidth: '100%',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              }}
+            >
               To add a virtual key, which is required, open{' '}
               <a
                 href="https://www.tesla.com/_ak/even.thedevcave.xyz"
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: 'var(--color-tc-accent)', textDecoration: 'underline' }}
+                style={{
+                  color: 'var(--color-tc-accent)',
+                  textDecoration: 'underline',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                }}
               >
                 https://www.tesla.com/_ak/even.thedevcave.xyz
               </a>{' '}
