@@ -120,6 +120,7 @@ export function buildTextContentFromVehicleData(
   const lines = [
     `${displayName} - ${batteryLevel}% - ${mileage} mi`,
     drivingLine,
+    '',
     climateOn ? 'Climate: On' : 'Climate: Off',
   ];
 
@@ -127,6 +128,7 @@ export function buildTextContentFromVehicleData(
   if (insideTempC != null && Number.isFinite(Number(insideTempC))) {
     const insideTempF = Math.round((Number(insideTempC) * 9) / 5 + 32);
     lines.push(`Inside Temp: ${insideTempF}`);
+    lines.push(``);
   }
 
   if (isCharging && chargeState) {
