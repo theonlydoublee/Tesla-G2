@@ -506,27 +506,30 @@ export function DashboardView({
               }}
             >
               To add a virtual key, which is required, open{' '}
-              <button
-                type="button"
+              <span
+                role="button"
+                tabIndex={0}
                 aria-label={`Copy ${VIRTUAL_KEY_ENROLL_URL} to clipboard`}
                 onClick={() => void copyTextToClipboard(VIRTUAL_KEY_ENROLL_URL)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    void copyTextToClipboard(VIRTUAL_KEY_ENROLL_URL);
+                  }
+                }}
                 style={{
                   color: 'var(--color-tc-accent)',
                   textDecoration: 'underline',
                   overflowWrap: 'anywhere',
                   wordBreak: 'break-word',
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  margin: 0,
-                  font: 'inherit',
                   cursor: 'pointer',
-                  textAlign: 'left',
+                  display: 'inline',
+                  verticalAlign: 'baseline',
                 }}
               >
                 {VIRTUAL_KEY_ENROLL_URL}
-              </button>{' '}
-              in a web browser on your phone with the Tesla app installed.
+              </span>{' '}
+              in a web browser on your phone with the Tesla app installed.  Tap it to copy.
             </Text>
             <Button
               type="button"
