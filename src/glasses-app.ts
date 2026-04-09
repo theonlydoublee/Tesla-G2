@@ -16,7 +16,8 @@ import {
 } from '@evenrealities/even_hub_sdk';
 
 import { apiUrl } from './api-base';
-import { STORAGE_KEY_SESSION_ID } from './tesla-session-storage';
+import { STORAGE_KEY_SESSION_ID, STORAGE_KEY_DISPLAY_UNITS } from './tesla-session-storage';
+import { parseDisplayUnits } from './display-units';
 import { readVisibleControlActions } from './command-layout';
 import {
   setupGlassesEventHandler,
@@ -434,7 +435,9 @@ async function refreshMainPageTextFromTesla(bridge: EvenAppBridge): Promise<stri
     }
     const vehicleData = ((data as { response?: unknown })?.response ?? data) as TeslaVehicleDataResponse;
     await persistVehicleSnapshot(bridge, vehicleData);
-    return finalize(buildTextContentFromVehicleData(vehicleData, storedDisplayName));
+    const unitsRaw = await bridge.getLocalStorage(STORAGE_KEY_DISPLAY_UNITS);
+    const units = parseDisplayUnits(unitsRaw);
+    return finalize(buildTextContentFromVehicleData(vehicleData, storedDisplayName, units));
   } catch {
     await clearVehicleSnapshot(bridge);
     return finalize(FALLBACK_TEXT);

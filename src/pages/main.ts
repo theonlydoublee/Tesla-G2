@@ -1,5 +1,7 @@
 /** Main page data from Tesla API. Live data, no static variables. */
 
+import type { DisplayUnits } from '../display-units';
+
 /** API-ready shape for canvas renderer. */
 export interface MainPageData {
   carName: string;
@@ -25,7 +27,7 @@ export interface TeslaVehicleDataResponse {
   display_name?: string | null;
   climate_state?: {
     is_climate_on?: boolean | null;
-    /** Cabin temperature from API (Celsius); shown on glasses as °F. */
+    /** Cabin temperature from API (Celsius); formatted per `DisplayUnits` (°F or °C). */
     inside_temp?: number | null;
   } | null;
   charge_state?: {
@@ -50,6 +52,9 @@ export interface TeslaVehicleDataResponse {
 }
 
 const FALLBACK_TEXT = 'Vehicle data unavailable';
+
+/** Tesla range/charge_rate values are treated as miles / mi/hr (see buildTextContentFromVehicleData). */
+const MI_TO_KM = 1.609344;
 
 /**
  * Shown on glasses when vehicle_data indicates the car is asleep or unreachable.
@@ -94,6 +99,7 @@ function formatChargingTime(minutes: number | null | undefined, hours: number | 
 export function buildTextContentFromVehicleData(
   vehicleData: TeslaVehicleDataResponse | null | undefined,
   preferredDisplayName?: string | null,
+  units: DisplayUnits = 'imperial',
 ): string {
   if (!vehicleData) return FALLBACK_TEXT;
 
@@ -103,7 +109,11 @@ export function buildTextContentFromVehicleData(
   const batteryLevel = chargeState?.battery_level ?? chargeState?.usable_battery_level ?? 0;
   const batteryRange =
     chargeState?.battery_range ?? chargeState?.est_battery_range ?? chargeState?.ideal_battery_range ?? 0;
-  const mileage = Math.round(batteryRange);
+  const rangeMiles = Math.round(batteryRange);
+  const rangeDisplay =
+    units === 'metric'
+      ? `${Math.round(batteryRange * MI_TO_KM)} km`
+      : `${rangeMiles} mi`;
   const shiftState = driveState?.shift_state ?? null;
   const drivingStateStr = formatDriveState(shiftState);
   const locked = vehicleData.vehicle_state?.locked;
@@ -118,7 +128,7 @@ export function buildTextContentFromVehicleData(
   const climateOn = climateState?.is_climate_on === true;
 
   const lines = [
-    `${displayName} - ${batteryLevel}% - ${mileage} mi`,
+    `${displayName} - ${batteryLevel}% - ${rangeDisplay}`,
     drivingLine,
     '',
     climateOn ? 'Climate: On' : 'Climate: Off',
@@ -126,8 +136,13 @@ export function buildTextContentFromVehicleData(
 
   const insideTempC = climateState?.inside_temp;
   if (insideTempC != null && Number.isFinite(Number(insideTempC))) {
-    const insideTempF = Math.round((Number(insideTempC) * 9) / 5 + 32);
-    lines.push(`Inside Temp: ${insideTempF}`);
+    const c = Number(insideTempC);
+    if (units === 'metric') {
+      lines.push(`Inside Temp: ${Math.round(c)} °C`);
+    } else {
+      const insideTempF = Math.round((c * 9) / 5 + 32);
+      lines.push(`Inside Temp: ${insideTempF} °F`);
+    }
     lines.push(``);
   }
 
@@ -141,7 +156,11 @@ export function buildTextContentFromVehicleData(
     if (timeLeft) lines.push(timeLeft);
     const rate = chargeState.charge_rate ?? 0;
     const power = chargeState.charger_power ?? 0;
-    lines.push(`${rate} mi/hr    ${power} kW`);
+    const rateDisplay =
+      units === 'metric'
+        ? `${Math.round(rate * MI_TO_KM)} km/h`
+        : `${rate} mi/hr`;
+    lines.push(`${rateDisplay}    ${power} kW`);
   }
 
   return lines.join('\n');

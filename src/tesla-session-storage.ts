@@ -9,3 +9,6 @@ export const STORAGE_KEY_FLEET_API_BASE = 'tesla_fleet_api_base';
 
 /** JSON `{ "order": string[] }` — enabled glasses command ids in display order (`ControlAction.id`). */
 export const STORAGE_KEY_GLASSES_COMMAND_ORDER = 'tesla_glasses_command_order';
+
+/** `imperial` | `metric` — distance/temp display on glasses main pane. */
+export const STORAGE_KEY_DISPLAY_UNITS = 'tesla_display_units';

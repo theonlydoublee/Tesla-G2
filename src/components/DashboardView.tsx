@@ -14,7 +14,9 @@ import {
   STORAGE_KEY_FLEET_REGION,
   STORAGE_KEY_FLEET_API_BASE,
   STORAGE_KEY_GLASSES_COMMAND_ORDER,
+  STORAGE_KEY_DISPLAY_UNITS,
 } from '../tesla-session-storage';
+import { parseDisplayUnits, type DisplayUnits } from '../display-units';
 import { CONTROL_ACTIONS } from '../controls-config';
 import {
   parseStoredCommandOrderJson,
@@ -87,6 +89,8 @@ export function DashboardView({
   const [virtualKeyCheckLoading, setVirtualKeyCheckLoading] = useState(false);
   const [commandOrderIds, setCommandOrderIds] = useState<string[]>(() => getDefaultCommandOrderIds());
   const [commandSaveStatus, setCommandSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [displayUnits, setDisplayUnits] = useState<DisplayUnits>('imperial');
+  const [unitsSaveStatus, setUnitsSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   function authHeader(): string {
     return `Bearer ${sessionId}`;
@@ -214,6 +218,18 @@ export function DashboardView({
     };
   }, [bridge]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const raw = await bridge.getLocalStorage(STORAGE_KEY_DISPLAY_UNITS);
+      if (cancelled) return;
+      setDisplayUnits(parseDisplayUnits(raw));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+
   async function checkVirtualKeyNow() {
     if (!selectedVehicle || needsReauth || !sessionId) return;
     setVirtualKeyCheckLoading(true);
@@ -298,6 +314,20 @@ export function DashboardView({
       if (prev.includes(id)) return prev;
       return [...prev, id];
     });
+  }
+
+  async function handleSaveDisplayUnits() {
+    if (needsReauth) return;
+    setUnitsSaveStatus('loading');
+    try {
+      await bridge.setLocalStorage(STORAGE_KEY_DISPLAY_UNITS, displayUnits);
+      await switchToMainPage(bridge);
+      setUnitsSaveStatus('success');
+      setTimeout(() => setUnitsSaveStatus('idle'), 2000);
+    } catch {
+      setUnitsSaveStatus('error');
+      setTimeout(() => setUnitsSaveStatus('idle'), 2000);
+    }
   }
 
   async function handleSaveCommandsToGlasses() {
@@ -570,6 +600,60 @@ export function DashboardView({
             </Button>
           </div>
         )}
+
+        <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
+          Display units
+        </Text>
+        <Text variant="body-2" style={{ marginBottom: 8, opacity: 0.85, display: 'block' }}>
+          Distance and temperature on the glasses main view (miles/km, °F/°C).
+        </Text>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            marginBottom: 12,
+            padding: 10,
+            borderRadius: 8,
+            backgroundColor: 'var(--color-bc-1st)',
+          }}
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="tesla-display-units"
+              checked={displayUnits === 'imperial'}
+              onChange={() => setDisplayUnits('imperial')}
+              disabled={needsReauth}
+            />
+            <Text variant="body-2">Imperial (mi, °F)</Text>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="tesla-display-units"
+              checked={displayUnits === 'metric'}
+              onChange={() => setDisplayUnits('metric')}
+              disabled={needsReauth}
+            />
+            <Text variant="body-2">Metric (km, °C)</Text>
+          </label>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleSaveDisplayUnits()}
+            disabled={unitsSaveStatus === 'loading' || needsReauth}
+            style={{ marginTop: 4 }}
+          >
+            {unitsSaveStatus === 'loading'
+              ? 'Saving…'
+              : unitsSaveStatus === 'success'
+                ? 'Saved'
+                : unitsSaveStatus === 'error'
+                  ? 'Failed'
+                  : 'Save display units'}
+          </Button>
+        </div>
 
         <Text variant="title-1" style={{ marginBottom: 8, display: 'block' }}>
           Glasses commands
