@@ -13,8 +13,8 @@
     "qr": "evenhub qr"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.9",
-    "@evenrealities/evenhub-simulator": "^0.3.2",
+    "@evenrealities/even_hub_sdk": "^0.0.10",
+    "@evenrealities/evenhub-simulator": "^0.7.1",
     "@jappyjan/even-realities-ui": "^0.0.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
