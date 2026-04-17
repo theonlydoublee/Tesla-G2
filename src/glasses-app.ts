@@ -856,11 +856,11 @@ async function showConfirmForAction(bridge: EvenAppBridge, action: ControlAction
 function attachMainPageGlassesHandlers(bridge: EvenAppBridge): void {
   glassesHubUnsubscribe?.();
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
-    // Double-tap exit disabled (no longer needed). Re-enable by restoring the handler body below.
     onDoubleClick: () => {
-      // Previous behavior (preserved for reference):
-      // bridge.shutDownPageContainer(1);
-      // markGlassesPageShutDown();
+      // 1 = normal exit with host confirmation (Page Lifecycle). Mark shutdown so reopen cold-starts.
+      markGlassesPageShutDown();
+
+      bridge.shutDownPageContainer(1);
     },
     onForegroundEnter: () => {
       if (glassesMainContainerNeedsColdStart || shouldColdStartGlassesFromStorage()) {
@@ -1063,7 +1063,7 @@ export async function startGlassesApp(bridge: EvenAppBridge): Promise<void> {
 }
 
 /**
- * Show credentials-needed message on glasses and minimal handler (double-tap to exit).
+ * Show credentials-needed message on glasses and minimal handler (double-tap exits plugin).
  * Call when session is missing so the glasses display starts up.
  */
 export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Promise<void> {
@@ -1078,10 +1078,10 @@ export async function startGlassesCredentialsMessage(bridge: EvenAppBridge): Pro
   }
 
   glassesHubUnsubscribe?.();
-  // Override SDK default double-tap → shutDownPageContainer(1); exit via Hub UI instead.
   glassesHubUnsubscribe = setupGlassesEventHandler(bridge, {
     onDoubleClick: () => {
-      // Previous: default in events.ts called bridge.shutDownPageContainer(1).
+      bridge.shutDownPageContainer(1);
+      markGlassesPageShutDown();
     },
   });
 }

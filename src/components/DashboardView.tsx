@@ -455,6 +455,7 @@ export function DashboardView({
       response_type: 'code',
       scope: SCOPES,
       state,
+      prompt: 'login',
     });
     window.location.href = `${AUTH_URL}?${params}`;
   };
