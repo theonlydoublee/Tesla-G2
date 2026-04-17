@@ -6,29 +6,20 @@
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-realities-ui';
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
-import { resolveTeslaClientId } from '../tesla-client-id';
-import { getTeslaRedirectUri } from '../tesla-redirect-uri';
-const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
-const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
+import { resolveTeslaOAuthConfig } from '../tesla-oauth-config';
+import { startTeslaAuthorizeRedirectWithConfig } from '../tesla-authorize-redirect';
 
 export interface SignInViewProps {
   bridge: EvenAppBridge;
 }
 
-function generateState(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (x) => chars[x % chars.length]).join('');
-}
-
-export function SignInView({ bridge }: SignInViewProps) {
-  const [clientId, setClientId] = useState<string | null>(null);
+export function SignInView({ bridge: _bridge }: SignInViewProps) {
+  const [oauth, setOauth] = useState<{ clientId: string; redirectUri: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void resolveTeslaClientId().then((result) => {
-      if (result.ok) setClientId(result.clientId);
+    void resolveTeslaOAuthConfig().then((result) => {
+      if (result.ok) setOauth({ clientId: result.clientId, redirectUri: result.redirectUri });
       else setError(result.message);
     });
   }, []);
@@ -45,7 +36,7 @@ export function SignInView({ bridge }: SignInViewProps) {
     );
   }
 
-  if (!clientId) {
+  if (!oauth) {
     return (
       <Card>
         <CardContent>
@@ -55,18 +46,8 @@ export function SignInView({ bridge }: SignInViewProps) {
     );
   }
   function handleSignIn() {
-    const state = generateState();
-    sessionStorage.setItem('tesla_oauth_state', state);
-
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: getTeslaRedirectUri(),
-      response_type: 'code',
-      scope: SCOPES,
-      state,
-    });
-
-    window.location.href = `${AUTH_URL}?${params}`;
+    if (!oauth) return;
+    startTeslaAuthorizeRedirectWithConfig(oauth);
   }
 
   return (

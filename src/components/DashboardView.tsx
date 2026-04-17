@@ -8,7 +8,7 @@ import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-real
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { switchToMainPage } from '../glasses-app';
 import { apiUrl } from '../api-base';
-import { resolveTeslaOAuthConfig } from '../tesla-oauth-config';
+import { startTeslaAuthorizeRedirect } from '../tesla-authorize-redirect';
 import {
   STORAGE_KEY_SESSION_ID,
   STORAGE_KEY_FLEET_REGION,
@@ -25,9 +25,6 @@ import {
   getDefaultCommandOrderIds,
   WAKE_COMMAND_ID,
 } from '../command-layout';
-import { TESLA_OAUTH_REDIRECT_SESSION_KEY } from '../tesla-redirect-uri';
-const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
-const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 const VIRTUAL_KEY_ENROLL_URL = 'https://www.tesla.com/_ak/even.thedevcave.xyz';
 
 const STORAGE_KEY_SELECTED_VEHICLE = 'tesla_selected_vehicle';
@@ -86,13 +83,6 @@ export interface DashboardViewProps {
   sessionId: string;
   needsReauth?: boolean;
   onSessionInvalid?: () => void;
-}
-
-function generateState(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (x) => chars[x % chars.length]).join('');
 }
 
 export function DashboardView({
@@ -441,23 +431,10 @@ export function DashboardView({
     } catch {
       // ignore
     }
-    const resolved = await resolveTeslaOAuthConfig();
-    if (!resolved.ok) {
-      setReAuthError(resolved.message);
-      return;
+    const started = await startTeslaAuthorizeRedirect();
+    if (!started.ok) {
+      setReAuthError(started.message);
     }
-    const state = generateState();
-    sessionStorage.setItem('tesla_oauth_state', state);
-    sessionStorage.setItem(TESLA_OAUTH_REDIRECT_SESSION_KEY, resolved.redirectUri);
-    const params = new URLSearchParams({
-      client_id: resolved.clientId,
-      redirect_uri: resolved.redirectUri,
-      response_type: 'code',
-      scope: SCOPES,
-      state,
-      prompt: 'login',
-    });
-    window.location.href = `${AUTH_URL}?${params}`;
   };
 
   return (

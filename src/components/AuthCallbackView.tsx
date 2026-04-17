@@ -13,6 +13,7 @@ import {
   STORAGE_KEY_FLEET_API_BASE,
 } from '../tesla-session-storage';
 import { getTeslaRedirectUri, TESLA_OAUTH_REDIRECT_SESSION_KEY } from '../tesla-redirect-uri';
+import { startTeslaAuthorizeRedirect } from '../tesla-authorize-redirect';
 
 const LEGACY_KEYS = ['tesla_access_token', 'tesla_refresh_token', 'tesla_token_refreshed_at'] as const;
 
@@ -29,6 +30,7 @@ async function clearLegacyTokenKeys(bridge: Awaited<ReturnType<typeof waitForEve
 export function AuthCallbackView() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState<string>('');
+  const [retryBusy, setRetryBusy] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -103,7 +105,19 @@ export function AuthCallbackView() {
           <Text variant="body-2" style={{ marginBottom: 16, color: 'var(--color-tc-red)' }}>
             {message}
           </Text>
-          <Button variant="primary" onClick={() => window.location.replace('/')}>
+          <Button
+            variant="primary"
+            disabled={retryBusy}
+            onClick={() => {
+              setRetryBusy(true);
+              void startTeslaAuthorizeRedirect().then((r) => {
+                if (!r.ok) {
+                  setMessage(r.message);
+                  setRetryBusy(false);
+                }
+              });
+            }}
+          >
             Try again
           </Button>
         </CardContent>
