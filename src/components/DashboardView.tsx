@@ -8,7 +8,7 @@ import { Card, CardHeader, CardContent, Button, Text } from '@jappyjan/even-real
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { switchToMainPage } from '../glasses-app';
 import { apiUrl } from '../api-base';
-import { resolveTeslaClientId } from '../tesla-client-id';
+import { resolveTeslaOAuthConfig } from '../tesla-oauth-config';
 import {
   STORAGE_KEY_SESSION_ID,
   STORAGE_KEY_FLEET_REGION,
@@ -25,7 +25,7 @@ import {
   getDefaultCommandOrderIds,
   WAKE_COMMAND_ID,
 } from '../command-layout';
-import { getTeslaRedirectUri } from '../tesla-redirect-uri';
+import { TESLA_OAUTH_REDIRECT_SESSION_KEY } from '../tesla-redirect-uri';
 const SCOPES = 'openid offline_access vehicle_device_data vehicle_cmds';
 const AUTH_URL = 'https://auth.tesla.com/oauth2/v3/authorize';
 const VIRTUAL_KEY_ENROLL_URL = 'https://www.tesla.com/_ak/even.thedevcave.xyz';
@@ -441,17 +441,17 @@ export function DashboardView({
     } catch {
       // ignore
     }
-    const resolved = await resolveTeslaClientId();
+    const resolved = await resolveTeslaOAuthConfig();
     if (!resolved.ok) {
       setReAuthError(resolved.message);
       return;
     }
-    const cid = resolved.clientId;
     const state = generateState();
     sessionStorage.setItem('tesla_oauth_state', state);
+    sessionStorage.setItem(TESLA_OAUTH_REDIRECT_SESSION_KEY, resolved.redirectUri);
     const params = new URLSearchParams({
-      client_id: cid,
-      redirect_uri: getTeslaRedirectUri(),
+      client_id: resolved.clientId,
+      redirect_uri: resolved.redirectUri,
       response_type: 'code',
       scope: SCOPES,
       state,

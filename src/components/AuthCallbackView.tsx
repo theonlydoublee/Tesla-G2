@@ -12,7 +12,7 @@ import {
   STORAGE_KEY_FLEET_REGION,
   STORAGE_KEY_FLEET_API_BASE,
 } from '../tesla-session-storage';
-import { getTeslaRedirectUri } from '../tesla-redirect-uri';
+import { getTeslaRedirectUri, TESLA_OAUTH_REDIRECT_SESSION_KEY } from '../tesla-redirect-uri';
 
 const LEGACY_KEYS = ['tesla_access_token', 'tesla_refresh_token', 'tesla_token_refreshed_at'] as const;
 
@@ -39,21 +39,27 @@ export function AuthCallbackView() {
     if (!code) {
       setStatus('error');
       setMessage('No authorization code received');
+      sessionStorage.removeItem(TESLA_OAUTH_REDIRECT_SESSION_KEY);
       return;
     }
 
     if (state !== savedState) {
       setStatus('error');
       setMessage('Invalid or expired state');
+      sessionStorage.removeItem(TESLA_OAUTH_REDIRECT_SESSION_KEY);
       return;
     }
 
     sessionStorage.removeItem('tesla_oauth_state');
 
+    const storedRedirect = sessionStorage.getItem(TESLA_OAUTH_REDIRECT_SESSION_KEY)?.trim();
+    sessionStorage.removeItem(TESLA_OAUTH_REDIRECT_SESSION_KEY);
+    const redirect_uri = storedRedirect || getTeslaRedirectUri();
+
     fetch(apiUrl('/api/tesla/exchange-token'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, redirect_uri: getTeslaRedirectUri() }),
+      body: JSON.stringify({ code, redirect_uri }),
     })
       .then((r) => r.json())
       .then(async (data) => {

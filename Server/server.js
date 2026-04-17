@@ -101,7 +101,8 @@ app.get('/api/tesla/config', (req, res) => {
   if (!clientId) {
     return res.status(500).json({ error: 'Tesla client not configured' });
   }
-  res.json({ clientId });
+  const redirectUri = process.env.TESLA_REDIRECT_URI?.trim();
+  res.json({ clientId, ...(redirectUri ? { redirectUri } : {}) });
 });
 
 app.post('/api/tesla/exchange-token', async (req, res) => {
